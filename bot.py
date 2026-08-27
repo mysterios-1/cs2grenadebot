@@ -28,6 +28,13 @@ from admin import admin_router, EditThrowState, ADMINS
 
 load_dotenv()
 
+print(f"[DEBUG] DB_PATH = {DB_PATH}")
+print(f"[DEBUG] Файл существует: {os.path.exists(DB_PATH)}")
+
+if os.path.exists(DB_PATH):
+    print(f"[DEBUG] Размер файла: {os.path.getsize(DB_PATH)} байт")
+
+
 # ==================== НАСТРОЙКИ ====================
 API_TOKEN = os.getenv("BOT_TOKEN")
 if not API_TOKEN:

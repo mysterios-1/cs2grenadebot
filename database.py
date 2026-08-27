@@ -4,7 +4,14 @@ import os
 import aiosqlite
 from datetime import datetime, timedelta
 
-DB_PATH = os.path.join("/data", "smoke_bot.db")
+import os
+
+if os.path.exists("/data"):
+    # На сервере Amvera
+    DB_PATH = "/data/smoke_bot.db"
+else:
+    # На твоём ПК
+    DB_PATH = os.path.join(os.path.dirname(__file__), "data", "smoke_bot.db")
 
 async def init_db():
     """Единая функция инициализации всех таблиц базы данных"""

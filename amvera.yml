@@ -1,0 +1,13 @@
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.13"  # или та версия Python, которую ты используешь
+
+build:
+  requirementsPath: requirements.txt
+
+run:
+  scriptName: bot.py  # здесь должно быть название твоего основного файла
+  persistenceMount: /data
+  containerPort: 80

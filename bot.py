@@ -878,8 +878,6 @@ async def select_package(callback: CallbackQuery):
 
 # ==================== ИНФО ====================
 
-# ==================== ИНФО (полная версия) ====================
-
 @dp.callback_query(F.data == "info")
 async def show_info(callback: CallbackQuery):
     info_icon = emoji("info")
@@ -927,7 +925,7 @@ async def expiry_notifications_worker():
 
                     await bot.send_message(
                         user_id,
-                        f"⚠️ <b>Доступ заканчивается завтра</b>\n\n"
+                        f"<b>Доступ заканчивается завтра</b>\n\n"
                         f"Ваша подписка действует до "
                         f"<b>{until.strftime('%d.%m.%Y %H:%M')}</b>.\n\n"
                         "Продлите доступ, чтобы продолжить пользоваться раскидками."

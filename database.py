@@ -100,17 +100,22 @@ async def init_db():
 
 async def add_user(user_id, username, full_name, referrer_id=None):
     async with aiosqlite.connect(DB_PATH) as db:
+        # Проверяем, существует ли пользователь
         cursor = await db.execute(
-            "SELECT user_id FROM users WHERE user_id = ?",
+            "SELECT user_id, referrer_id FROM users WHERE user_id = ?",
             (user_id,)
         )
-        if await cursor.fetchone():
+        existing = await cursor.fetchone()
+        
+        if existing:
+            # Пользователь уже есть — возвращаем False (бонус не начисляется)
             return False
 
         now = datetime.now()
         access_until = now + timedelta(days=7)
         valid_referrer = None
 
+        # Проверяем реферера
         if referrer_id and referrer_id != user_id:
             cursor = await db.execute(
                 "SELECT user_id FROM users WHERE user_id = ?",
@@ -119,6 +124,7 @@ async def add_user(user_id, username, full_name, referrer_id=None):
             if await cursor.fetchone():
                 valid_referrer = referrer_id
 
+                # Начисляем бонус рефереру (ТОЛЬКО 1 РАЗ!)
                 cursor = await db.execute(
                     "SELECT access_until FROM users WHERE user_id = ?",
                     (referrer_id,)
@@ -146,6 +152,7 @@ async def add_user(user_id, username, full_name, referrer_id=None):
                     ),
                 )
 
+        # Создаём нового пользователя
         await db.execute(
             """
             INSERT INTO users

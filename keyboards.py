@@ -267,25 +267,21 @@ def get_profile_menu() -> InlineKeyboardMarkup:
 def get_subscription_packages_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    week = emoji('week')
-    month = emoji('month')
-    year = emoji('year')
-
     builder.row(
         InlineKeyboardButton(
-            text=f"{week} Неделя — 99 ₽",
+            text="Неделя — 99 ₽",
             callback_data="buy_week"
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"{month} Месяц — 299 ₽",
+            text="Месяц — 299 ₽",
             callback_data="buy_month"
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"{year} Год — 999 ₽",
+            text="Год — 999 ₽",
             callback_data="buy_year"
         )
     )

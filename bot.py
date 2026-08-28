@@ -805,7 +805,7 @@ async def show_profile(callback: CallbackQuery):
         f"{profile_icon} <b>Личный кабинет</b>\n\n"
         f"{account_icon} Имя: {callback.from_user.full_name}\n"
         f"{calendar} Доступ: {date_text}\n"
-        f"{key} Статус: {status} {status_text}\n"
+        f"{key} Статус: {status_text}\n"
     )
     
     await callback.message.edit_caption(
@@ -910,25 +910,24 @@ async def select_package(callback: CallbackQuery):
 async def show_info(callback: CallbackQuery):
     info_icon = emoji("info")
     bot_icon = emoji("bot_icon")
-    pushpin = emoji("pushpin")
      
     text = (
         f"{info_icon} <b>Информация о боте</b>\n\n"
-        f"{bot_icon} <b>GrenadeCS2</b> — бот для тренировки гранат в CS2.\n\n"
-        f"{pushpin} <b>Доступные карты:</b>\n"
+        f"<b>GrenadeCS2</b> — бот для тренировки гранат в CS2.\n\n"
+        f"<b>Доступные карты:</b>\n"
         f"{emoji('mirage')} Mirage\n"
         f"{emoji('dust2')} Dust II\n"
         f"{emoji('inferno')} Inferno\n"
         f"{emoji('nuke')} Nuke\n\n"
-        "💡 <b>Возможности:</b>\n"
+        "<b>Возможности:</b>\n"
         f"{emoji('smoke')} Изучение смоков\n"
         f"{emoji('flash')} Тренировка флешек\n"
         f"{emoji('he')} Практика хаешек\n"
         f"{emoji('molotov')} Обучение моликам\n\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Документы</b>\n"
-        "📄 <a href='https://telegra.ph/Polzovatelskoe-soglashenie-GrenadeCS2-08-27'>Пользовательское соглашение</a>\n"
-        "🔒 <a href='https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-27-80'>Политика конфиденциальности</a>"
+        "<a href='https://telegra.ph/Polzovatelskoe-soglashenie-GrenadeCS2-08-27'>Пользовательское соглашение</a>\n"
+        "<a href='https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-27-80'>Политика конфиденциальности</a>"
     )
     
     await callback.message.edit_caption(

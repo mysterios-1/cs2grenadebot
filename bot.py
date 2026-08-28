@@ -128,7 +128,30 @@ async def start_command(message: Message, command: CommandObject):
         except ValueError:
             pass
     
-    await add_user(user_id, username, full_name, referrer_id)
+    # Передаём bot в add_user для отправки уведомлений
+    success, referrer = await add_user(user_id, username, full_name, referrer_id, bot)
+    
+    # 🎯 Приветствие для нового пользователя (если пришёл по рефке)
+    if success and referrer:
+        try:
+            # Получаем имя реферера
+            async with aiosqlite.connect(DB_PATH) as db:
+                cursor = await db.execute(
+                    "SELECT full_name, username FROM users WHERE user_id = ?",
+                    (referrer,)
+                )
+                row = await cursor.fetchone()
+                referrer_name = row[0] or row[1] or str(referrer) if row else str(referrer)
+            
+            await message.answer(
+                f"🎉 <b>Добро пожаловать!</b>\n\n"
+                f"Вас пригласил пользователь <b>{referrer_name}</b>.\n"
+                f"Вы получили <b>7 дней</b> бесплатного доступа! 🎁\n\n"
+                f"Используйте кнопки ниже, чтобы начать тренировку гранат."
+            )
+        except Exception as e:
+            print(f"Не удалось отправить приветствие рефералу: {e}")
+    
     await send_main_menu(message, full_name)
 
 
@@ -771,15 +794,18 @@ async def show_profile(callback: CallbackQuery):
     profile_icon = emoji("profile")
     check = emoji("check")
     cross = emoji("cross")
+    account_icon = emoji("account_icon")
+    calendar = emoji("calendar")
+    key = emoji("key")
     status = check if has_access else cross
     status_text = "Активен" if has_access else "Неактивен"
     date_text = await get_subscription_text(callback.from_user.id)
     
     text = (
         f"{profile_icon} <b>Личный кабинет</b>\n\n"
-        f"👤 Имя: {callback.from_user.full_name}\n"
-        f"📅 Доступ: {date_text}\n"
-        f"🔑 Статус: {status} {status_text}\n"
+        f"{account_icon} Имя: {callback.from_user.full_name}\n"
+        f"{calendar} Доступ: {date_text}\n"
+        f"{key} Статус: {status} {status_text}\n"
     )
     
     await callback.message.edit_caption(
@@ -832,12 +858,14 @@ async def show_support(callback: CallbackQuery):
         return
 
     support_icon = emoji("support")
+    phone = emoji('phone')
+    time = emoji('time')
     
     text = (
         f"{support_icon} <b>Поддержка</b>\n\n"
         "По всем вопросам обращайтесь:\n"
-        "📱 Telegram: @syntax322\n\n"
-        "⏰ Время ответа: до 24 часов"
+        f"{phone} Telegram: @syntax322\n\n"
+        f"{time} Время ответа: до 24 часов"
     )
     
     await callback.message.edit_caption(
@@ -882,11 +910,12 @@ async def select_package(callback: CallbackQuery):
 async def show_info(callback: CallbackQuery):
     info_icon = emoji("info")
     bot_icon = emoji("bot_icon")
-    
+    pushpin = emoji("pushpin")
+     
     text = (
         f"{info_icon} <b>Информация о боте</b>\n\n"
         f"{bot_icon} <b>GrenadeCS2</b> — бот для тренировки гранат в CS2.\n\n"
-        "📌 <b>Доступные карты:</b>\n"
+        f"{pushpin} <b>Доступные карты:</b>\n"
         f"{emoji('mirage')} Mirage\n"
         f"{emoji('dust2')} Dust II\n"
         f"{emoji('inferno')} Inferno\n"

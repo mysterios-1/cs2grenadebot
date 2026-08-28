@@ -98,7 +98,7 @@ async def init_db():
 
 # ==================== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ====================
 
-async def add_user(user_id, username, full_name, referrer_id=None):
+async def add_user(user_id, username, full_name, referrer_id=None, bot=None):
     async with aiosqlite.connect(DB_PATH) as db:
         # Проверяем, существует ли пользователь
         cursor = await db.execute(
@@ -108,8 +108,7 @@ async def add_user(user_id, username, full_name, referrer_id=None):
         existing = await cursor.fetchone()
         
         if existing:
-            # Пользователь уже есть — возвращаем False (бонус не начисляется)
-            return False
+            return False, None  # (успех, реферер)
 
         now = datetime.now()
         access_until = now + timedelta(days=7)
@@ -124,7 +123,7 @@ async def add_user(user_id, username, full_name, referrer_id=None):
             if await cursor.fetchone():
                 valid_referrer = referrer_id
 
-                # Начисляем бонус рефереру (ТОЛЬКО 1 РАЗ!)
+                # Начисляем бонус рефереру
                 cursor = await db.execute(
                     "SELECT access_until FROM users WHERE user_id = ?",
                     (referrer_id,)
@@ -152,6 +151,23 @@ async def add_user(user_id, username, full_name, referrer_id=None):
                     ),
                 )
 
+                # 🎯 ОТПРАВЛЯЕМ УВЕДОМЛЕНИЕ РЕФЕРЕРУ
+                if bot:
+                    try:
+                        # Получаем имя нового пользователя
+                        new_user_name = full_name or username or str(user_id)
+                        
+                        await bot.send_message(
+                            referrer_id,
+                            f"🎉 <b>Новый реферал!</b>\n\n"
+                            f"По вашей ссылке зарегистрировался новый пользователь:\n"
+                            f"👤 {new_user_name}\n\n"
+                            f"✨ Вы получили <b>+7 дней</b> доступа!\n"
+                            f"📅 Теперь подписка действует до <b>{referrer_until.strftime('%d.%m.%Y %H:%M')}</b>"
+                        )
+                    except Exception as e:
+                        print(f"Не удалось отправить уведомление рефереру {referrer_id}: {e}")
+
         # Создаём нового пользователя
         await db.execute(
             """
@@ -168,7 +184,8 @@ async def add_user(user_id, username, full_name, referrer_id=None):
             ),
         )
         await db.commit()
-        return valid_referrer is not None
+        
+        return True, valid_referrer
 
 
 async def check_access(user_id):

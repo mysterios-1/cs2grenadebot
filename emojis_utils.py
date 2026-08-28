@@ -37,6 +37,15 @@ EMOJI_FALLBACK = {
     "molotov": "🔥",
     "anubis": "👷‍♂️",
     "ancient": "👩‍🎨",
+    "account_icon": "🙅‍♀️",
+    "calendar": "🧑‍🎓",
+    "key": "👨‍🚀",
+    "refferal_link": "😬",
+    "phone": "🫵",
+    "time": "😑",
+    "week": "🫵",
+    "month": "😁",
+    "year": "🫤",
 }
 
 def emoji(emoji_key: str) -> str:

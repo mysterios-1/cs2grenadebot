@@ -3,7 +3,7 @@ import asyncio
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import get_throw_detail
-from emojis_utils import get_button_emoji
+from emojis_utils import emoji, get_button_emoji
 from urllib.parse import quote
 
 
@@ -267,21 +267,25 @@ def get_profile_menu() -> InlineKeyboardMarkup:
 def get_subscription_packages_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
+    week = emoji('week')
+    month = emoji('month')
+    year = emoji('year')
+
     builder.row(
         InlineKeyboardButton(
-            text="Неделя — 99 ₽",
+            text=f"{week} Неделя — 99 ₽",
             callback_data="buy_week"
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text="Месяц — 299 ₽",
+            text=f"{month} Месяц — 299 ₽",
             callback_data="buy_month"
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text="Год — 999 ₽",
+            text=f"{year} Год — 999 ₽",
             callback_data="buy_year"
         )
     )
@@ -300,11 +304,10 @@ def get_referral_menu(ref_link: str, ref_count: int) -> InlineKeyboardMarkup:
 
     builder.row(
         InlineKeyboardButton(
-            text="🔗 Поделиться ботом",
+            text="Поделиться ботом",
             url=share_url
         )
     )
-    builder.row(create_btn("info", "Открыть ссылку", url=ref_link))
     builder.row(create_btn("left", "Назад", callback_data="back_main"))
 
     return builder.as_markup()

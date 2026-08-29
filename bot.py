@@ -913,7 +913,7 @@ async def show_info(callback: CallbackQuery):
      
     text = (
         f"{info_icon} <b>Информация о боте</b>\n\n"
-        f"<b>GrenadeCS2</b> — бот для тренировки гранат в CS2.\n\n"
+        f"<b>GrenadeCS2</b> — бот для тренировки гранат, и использовании их в матчах CS2.\n\n"
         f"<b>Доступные карты:</b>\n"
         f"{emoji('mirage')} Mirage\n"
         f"{emoji('dust2')} Dust II\n"

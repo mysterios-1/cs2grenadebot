@@ -98,44 +98,48 @@ async def init_db():
 
 # ==================== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ====================
 
-async def add_user(user_id, username, full_name, referrer_id=None, bot=None):
+async def add_user(user_id: int, username: str, full_name: str, referrer_id: int = None, bot = None) -> tuple:
+    """
+    Добавляет пользователя в БД, обрабатывает реферальную систему.
+    Возвращает: (success, valid_referrer_id, referrer_name)
+    """
+    # Переменные, которые понадобятся вне блока работы с БД
+    success = False
+    valid_referrer = None
+    referrer_name = None
+    referrer_until = None
+
     async with aiosqlite.connect(DB_PATH) as db:
-        # Проверяем, существует ли пользователь
-        cursor = await db.execute(
-            "SELECT user_id, referrer_id FROM users WHERE user_id = ?",
-            (user_id,)
-        )
-        existing = await cursor.fetchone()
+        # 1. Проверяем, существует ли пользователь
+        async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            existing = await cursor.fetchone()
         
         if existing:
-            return False, None  # (успех, реферер)
+            return False, None, None
 
         now = datetime.now()
         access_until = now + timedelta(days=7)
-        valid_referrer = None
 
-        # Проверяем реферера
+        # 2. Проверяем реферера и сразу достаем все нужные данные ОДНИМ запросом
         if referrer_id and referrer_id != user_id:
-            cursor = await db.execute(
-                "SELECT user_id FROM users WHERE user_id = ?",
-                (referrer_id,)
-            )
-            if await cursor.fetchone():
+            query_ref = "SELECT user_id, full_name, username, access_until FROM users WHERE user_id = ?"
+            async with db.execute(query_ref, (referrer_id,)) as cursor:
+                ref_row = await cursor.fetchone()
+
+            if ref_row:
                 valid_referrer = referrer_id
+                ref_full_name = ref_row[1]
+                ref_username = ref_row[2]
+                ref_access_until_str = ref_row[3]
 
-                # Начисляем бонус рефереру
-                cursor = await db.execute(
-                    "SELECT access_until FROM users WHERE user_id = ?",
-                    (referrer_id,)
-                )
-                row = await cursor.fetchone()
+                # Формируем красивое имя реферера для возврата в хэндлер /start
+                referrer_name = ref_full_name or ref_username or str(referrer_id)
 
+                # Считаем новую дату подписки реферера
                 referrer_until = now
-                if row and row[0]:
+                if ref_access_until_str:
                     try:
-                        referrer_until = datetime.strptime(
-                            row[0], "%Y-%m-%d %H:%M:%S"
-                        )
+                        referrer_until = datetime.strptime(ref_access_until_str, "%Y-%m-%d %H:%M:%S")
                         if referrer_until < now:
                             referrer_until = now
                     except ValueError:
@@ -143,36 +147,16 @@ async def add_user(user_id, username, full_name, referrer_id=None, bot=None):
 
                 referrer_until += timedelta(days=7)
 
+                # Обновляем подписку рефереру
                 await db.execute(
                     "UPDATE users SET access_until = ?, expiry_notice_sent = 0 WHERE user_id = ?",
-                    (
-                        referrer_until.strftime("%Y-%m-%d %H:%M:%S"),
-                        referrer_id,
-                    ),
+                    (referrer_until.strftime("%Y-%m-%d %H:%M:%S"), referrer_id),
                 )
 
-                # 🎯 ОТПРАВЛЯЕМ УВЕДОМЛЕНИЕ РЕФЕРЕРУ
-                if bot:
-                    try:
-                        # Получаем имя нового пользователя
-                        new_user_name = full_name or username or str(user_id)
-                        
-                        await bot.send_message(
-                            referrer_id,
-                            f"🎉 <b>Новый реферал!</b>\n\n"
-                            f"По вашей ссылке зарегистрировался новый пользователь:\n"
-                            f"👤 {new_user_name}\n\n"
-                            f"✨ Вы получили <b>+7 дней</b> доступа!\n"
-                            f"📅 Теперь подписка действует до <b>{referrer_until.strftime('%d.%m.%Y %H:%M')}</b>"
-                        )
-                    except Exception as e:
-                        print(f"Не удалось отправить уведомление рефереру {referrer_id}: {e}")
-
-        # Создаём нового пользователя
+        # 3. Создаём нового пользователя
         await db.execute(
             """
-            INSERT INTO users
-            (user_id, username, full_name, access_until, referrer_id)
+            INSERT INTO users (user_id, username, full_name, access_until, referrer_id)
             VALUES (?, ?, ?, ?, ?)
             """,
             (
@@ -184,35 +168,55 @@ async def add_user(user_id, username, full_name, referrer_id=None, bot=None):
             ),
         )
         await db.commit()
-        
-        return True, valid_referrer
+        success = True
+
+    # 4. 🔥 ОТПРАВЛЯЕМ УВЕДОМЛЕНИЕ РЕФЕРЕРУ СТРОГО ПОСЛЕ ЗАКРЫТИЯ СОЕДИНЕНИЯ С БД
+    if success and valid_referrer and bot:
+        try:
+            new_user_name = full_name or username or str(user_id)
+            await bot.send_message(
+                valid_referrer,
+                f"🎉 <b>Новый реферал!</b>\n\n"
+                f"По вашей ссылке зарегистрировался новый пользователь:\n"
+                f"👤 {new_user_name}\n\n"
+                f"✨ Вы получили <b>+7 дней</b> доступа!\n"
+                f"📅 Теперь подписка действует до <b>{referrer_until.strftime('%d.%m.%Y %H:%M')}</b>"
+            )
+        except Exception as e:
+            print(f"Не удалось отправить уведомление рефереру {valid_referrer}: {e}")
+
+    return success, valid_referrer, referrer_name
 
 
-async def check_access(user_id):
-    """Проверка доступа. Администраторы всегда имеют полный доступ"""
-    
+async def check_access(user_id: int) -> bool:
+    """
+    Проверка доступа пользователя.
+    Администраторы всегда имеют полный доступ.
+    """
     ADMINS = [2129614624]
     
+    # Администраторы всегда имеют доступ
     if user_id in ADMINS:
         return True
         
     async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT access_until, balance_days FROM users WHERE user_id=?", (user_id,))
-        row = await cursor.fetchone()
+        # Получаем текущее время в нужном формате для сравнения строк в SQL
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        if row is None:
-            return False
+        # Запрос проверяет: активны ли дни доступа ИЛИ не истекла ли дата окончания
+        query = """
+            SELECT 1 FROM users 
+            WHERE user_id = ? AND (
+                (balance_days IS NOT NULL AND balance_days > 0) OR 
+                (access_until IS NOT NULL AND access_until > ?)
+            )
+            LIMIT 1
+        """
         
-        access_until, balance_days = row
-        if access_until:
-            try:
-                if datetime.now() < datetime.strptime(access_until, "%Y-%m-%d %H:%M:%S"):
-                    return True
-            except:
-                pass
-        if balance_days and balance_days > 0:
-            return True
-        return False
+        async with db.execute(query, (user_id, now_str)) as cursor:
+            row = await cursor.fetchone()
+            # Если строка найдена — доступ есть (True), если нет — доступа нет (False)
+            return row is not None
 
 async def add_days(user_id, days):
     async with aiosqlite.connect(DB_PATH) as db:

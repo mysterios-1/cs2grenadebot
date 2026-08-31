@@ -227,16 +227,8 @@ def get_combo_page_kb(throw_id: int, current_view: str, combo_list: list = None,
         buttons.append(create_btn("left", "Назад", callback_data=f"page_{last_id}_2"))
         builder.row(*buttons)
     
-    # ВАЖНО: кнопка "К списку" должна вести на корректный callback
-    # Получаем тип гранаты и карту из первой раскидки в комбо
-    first_throw = combo_list[0]
-    first_throw_id = first_throw[0]
-    first_throw_detail = asyncio.run_coroutine_threadsafe(
-        get_throw_detail(first_throw_id), 
-        asyncio.get_event_loop()
-    ).result() if hasattr(asyncio, 'get_event_loop') else None
-    
-    # Если не можем получить детали - используем заглушку
+    # Оптимизация: Используем чистую заглушку. Хэндлер сам подменит её 
+    # на корректный callback вида f"{g_type}_{map_name}" без блокировок потока.
     back_callback = "back_to_list_placeholder"
     
     builder.row(

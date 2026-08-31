@@ -123,36 +123,34 @@ async def start_command(message: Message, command: CommandObject):
     full_name = message.from_user.full_name or "unknown"
     
     referrer_id = None
+    # Более надежное извлечение ID реферера без лишних строковых операций
     if command.args and command.args.startswith("ref_"):
         try:
-            referrer_id = int(command.args.replace("ref_", ""))
+            referrer_id = int(command.args[4:])
         except ValueError:
             pass
     
+    # Ожидаем, что add_user теперь возвращает:
+    # success (bool), referrer_id (int или None), referrer_name (str или None)
     # Передаём bot в add_user для отправки уведомлений
-    success, referrer = await add_user(user_id, username, full_name, referrer_id, bot)
+    success, referrer, referrer_name = await add_user(user_id, username, full_name, referrer_id, bot)
     
-    # 🎯 Приветствие для нового пользователя (если пришёл по рефке)
+    # 🎯 Приветствие для нового пользователя (если пришёл по рефке и успешно зарегистрирован)
     if success and referrer:
         try:
-            # Получаем имя реферера
-            async with aiosqlite.connect(DB_PATH) as db:
-                cursor = await db.execute(
-                    "SELECT full_name, username FROM users WHERE user_id = ?",
-                    (referrer,)
-                )
-                row = await cursor.fetchone()
-                referrer_name = row[0] or row[1] or str(referrer) if row else str(referrer)
+            # Если имя реферера не пришло из функции add_user, ставим ID как заглушку
+            ref_display_name = referrer_name or str(referrer)
             
             await message.answer(
                 f"🎉 <b>Добро пожаловать!</b>\n\n"
-                f"Вас пригласил пользователь <b>{referrer_name}</b>.\n"
+                f"Вас пригласил пользователь <b>{ref_display_name}</b>.\n"
                 f"Вы получили <b>7 дней</b> бесплатного доступа! 🎁\n\n"
                 f"Используйте кнопки ниже, чтобы начать тренировку гранат."
             )
         except Exception as e:
             print(f"Не удалось отправить приветствие рефералу: {e}")
     
+    # Отправляем главное меню пользователю
     await send_main_menu(message, full_name)
 
 
@@ -160,7 +158,13 @@ async def start_command(message: Message, command: CommandObject):
 
 @dp.callback_query(F.data == "show_maps")
 async def show_maps(callback: CallbackQuery):
+    # 1. Сразу гасим анимацию загрузки на кнопке (избавляемся от ошибки таймаута)
+    await callback.answer()
+    
+    # 2. Быстро проверяем доступ в БД (используется наша ускоренная функция)
     has_access = await check_access(callback.from_user.id)
+    
+    # 3. Если доступа нет, выводим соответствующее меню
     if not has_access:
         cross = emoji("cross")
         await callback.message.edit_caption(
@@ -168,36 +172,44 @@ async def show_maps(callback: CallbackQuery):
                     "Для просмотра карт необходимо оформить подписку.",
             reply_markup=get_no_access_menu()
         )
-        await callback.answer()
         return
     
+    # 4. Если доступ есть, показываем клавиатуру с картами
     map_icon = emoji("map_icon")
     await callback.message.edit_caption(
         caption=f"{map_icon} <b>Выберите карту:</b>\n\n"
                 "Доступные карты для тренировки гранат:",
         reply_markup=get_maps_keyboard()
     )
-    await callback.answer()
 
 
 # ==================== ДЕТАЛИ КАРТЫ ====================
 
 @dp.callback_query(F.data.startswith("map_"))
 async def show_map_details(callback: CallbackQuery):
+    # 1. Запускаем проверку доступа и получение фото параллельно
+    has_access, main_photo = await asyncio.gather(
+        check_access(callback.from_user.id),
+        get_bot_photo("main_menu")
+    )
 
-    if not await check_access(callback.from_user.id):
+    # 2. Если доступа нет, сразу выводим уведомление-алерт и завершаем функцию
+    if not has_access:
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
+
+    # 3. Гасим часики анимации загрузки, так как доступ есть и мы готовы перерисовать меню
+    await callback.answer()
 
     map_key = callback.data.replace("map_", "")
     
     map_names = {
-    "mirage": "Mirage",
-    "dust2": "Dust II",
-    "inferno": "Inferno",
-    "nuke": "Nuke",
-    "anubis": "Anubis",
-    "ancient": "Ancient"
+        "mirage": "Mirage",
+        "dust2": "Dust II",
+        "inferno": "Inferno",
+        "nuke": "Nuke",
+        "anubis": "Anubis",
+        "ancient": "Ancient"
     }
     
     map_name = map_names.get(map_key, map_key.capitalize())
@@ -207,25 +219,32 @@ async def show_map_details(callback: CallbackQuery):
         "Выберите тип гранаты:"
     )
     
-    main_photo = await get_bot_photo("main_menu")
-    
+    # 4. Обновляем интерфейс
     if main_photo:
-        await callback.message.delete()
+        # Сначала отправляем новое фото, чтобы интерфейс не «прыгал»
         await callback.message.answer_photo(
             photo=main_photo,
             caption=text,
             reply_markup=get_map_detail_menu(map_key)
         )
+        # И только потом удаляем старое сообщение
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
     else:
         await callback.message.edit_caption(
             caption=text,
             reply_markup=get_map_detail_menu(map_key)
         )
-    await callback.answer()
 
 
 
 # ==================== ГРАНАТЫ ====================
+
+import asyncio
+from aiogram import F
+from aiogram.types import CallbackQuery
 
 @dp.callback_query(
     F.data.startswith("smoke_")
@@ -236,9 +255,13 @@ async def show_map_details(callback: CallbackQuery):
     | F.data.startswith("oneway_")
 )
 async def show_grenade_type(callback: CallbackQuery):
+    # 1. Быстро проверяем доступ, чтобы сразу отсечь неавторизованных
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
+
+    # 2. Сразу гасим часики загрузки, так как доступ есть
+    await callback.answer()
 
     grenade_type, map_name = callback.data.split("_", 1)
 
@@ -246,48 +269,40 @@ async def show_grenade_type(callback: CallbackQuery):
     CURRENT_PAGE = 1
     DEFAULT_SIDE = "t"
     OFFSET = 0
+    
+    zones_to_check = ("a", "b", "mid", "situational")
 
     if grenade_type in {"insta", "oneway"}:
         kb_zone = "all"
+        
+        # Запускаем ВСЕ запросы количества параллельно (4 запроса одновременно за доли секунды)
+        count_tasks = [
+            get_throws_count(map_name, grenade_type, zone=z, side=DEFAULT_SIDE)
+            for z in zones_to_check
+        ]
+        counts = await asyncio.gather(*count_tasks)
+        total_count = sum(counts)
+
+        # Оптимизированный сбор раскидок: запрашиваем зоны параллельно
+        throws_tasks = [
+            get_throws(map_name, grenade_type, zone=z, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
+            for z in zones_to_check
+        ]
+        throws_results = await asyncio.gather(*throws_tasks)
+        
+        # Объединяем результаты в один список и берем только нужный ЛИМИТ
         throws_list = []
-        total_count = 0
-
-        for possible_zone in ("a", "b", "mid", "situational"):
-            total_count += await get_throws_count(
-                map_name,
-                grenade_type,
-                zone=possible_zone,
-                side=DEFAULT_SIDE,
-            )
-
-            items = await get_throws(
-                map_name,
-                grenade_type,
-                zone=possible_zone,
-                side=DEFAULT_SIDE,
-                limit=LIMIT,
-                offset=OFFSET,
-            )
+        for items in throws_results:
             throws_list.extend(items)
-
         throws_list = throws_list[:LIMIT]
+
     else:
         kb_zone = "a"
-
-        total_count = await get_throws_count(
-            map_name,
-            grenade_type,
-            zone=kb_zone,
-            side=DEFAULT_SIDE,
-        )
-
-        throws_list = await get_throws(
-            map_name,
-            grenade_type,
-            zone=kb_zone,
-            side=DEFAULT_SIDE,
-            limit=LIMIT,
-            offset=OFFSET,
+        
+        # Для обычных гранат запускаем получение количества и самих данных параллельно
+        total_count, throws_list = await asyncio.gather(
+            get_throws_count(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE),
+            get_throws(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
         )
 
     grenade_names = {
@@ -300,11 +315,7 @@ async def show_grenade_type(callback: CallbackQuery):
     }
 
     grenade_name = grenade_names.get(grenade_type, "Гранаты")
-    emoji_name = (
-        grenade_type
-        if grenade_type in {"smoke", "flash", "he", "molotov"}
-        else "smoke"
-    )
+    emoji_name = grenade_type if grenade_type in {"smoke", "flash", "he", "molotov"} else "smoke"
     grenade_emoji = emoji(emoji_name)
 
     text = (
@@ -324,37 +335,18 @@ async def show_grenade_type(callback: CallbackQuery):
         limit=LIMIT,
     )
 
-    # Для Mirage Insta показываем фото респа Т
+    # 3. Определяем, какое фото нам нужно получить (параллельно отправке не получится, но сделаем это быстро)
     if map_name.lower() == "mirage" and grenade_type == "insta":
-        resp_photo = await get_bot_photo("mirage_resp_t")
+        photo_key = "mirage_resp_t"
+    else:
+        photo_key = "main_menu"
+        
+    bot_photo = await get_bot_photo(photo_key)
 
-        if resp_photo:
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-
-            await callback.message.answer_photo(
-                photo=resp_photo,
-                caption=text,
-                reply_markup=reply_markup,
-                parse_mode="HTML",
-            )
-            await callback.answer()
-            return
-
-    # Для остальных случаев удаляем старое сообщение
-    # и отправляем главное фото заново
-    main_photo = await get_bot_photo("main_menu")
-
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-
-    if main_photo:
+    # 4. Сначала отправляем новое сообщение, чтобы у юзера не пропадал интерфейс
+    if bot_photo:
         await callback.message.answer_photo(
-            photo=main_photo,
+            photo=bot_photo,
             caption=text,
             reply_markup=reply_markup,
             parse_mode="HTML",
@@ -366,16 +358,22 @@ async def show_grenade_type(callback: CallbackQuery):
             parse_mode="HTML",
         )
 
-    await callback.answer()
+    # 5. И только в самом конце безболезненно удаляем старое сообщение
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
 
 # ==================== ФИЛЬТР ПО ЗОНАМ ====================
 
 @dp.callback_query(F.data.startswith("filter_"))
 async def filter_by_zone(callback: CallbackQuery):
+    # 1. Быстро проверяем доступ, чтобы сразу отсечь неавторизованных
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
+    # Разбираем callback_data
     try:
         parts = callback.data.split("_")
         # filter_mirage_smoke_a_t (5 частей)
@@ -384,7 +382,7 @@ async def filter_by_zone(callback: CallbackQuery):
             _, map_name, grenade_type, zone, side = parts
         elif len(parts) == 4:
             _, map_name, grenade_type, zone = parts
-            side = "t"  # Значение по умолчанию, не используется для situational
+            side = "t"  # Значение по умолчанию
         else:
             await callback.answer("Ошибка данных.", show_alert=True)
             return
@@ -392,13 +390,20 @@ async def filter_by_zone(callback: CallbackQuery):
         await callback.answer("Ошибка данных.", show_alert=True)
         return
 
+    # 2. Данные валидны, доступ есть — СРАЗУ гасим часики загрузки в Telegram
+    await callback.answer()
+
     LIMIT = 5
     CURRENT_PAGE = 1
     OFFSET = (CURRENT_PAGE - 1) * LIMIT
 
-    total_count = await get_throws_count(map_name, grenade_type, zone=zone, side=side)
-    throws_list = await get_throws(map_name, grenade_type, zone=zone, side=side, limit=LIMIT, offset=OFFSET)
+    # 3. Запускаем оба запроса к базе данных параллельно
+    total_count, throws_list = await asyncio.gather(
+        get_throws_count(map_name, grenade_type, zone=zone, side=side),
+        get_throws(map_name, grenade_type, zone=zone, side=side, limit=LIMIT, offset=OFFSET)
+    )
 
+    # Словари и генерация текста
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки", "molotov": "Молики",
         "insta": "Insta Смоки", "oneway": "One-Way Смоки"
@@ -412,6 +417,7 @@ async def filter_by_zone(callback: CallbackQuery):
         "Выбирайте сторону кнопками-вкладками ниже:"
     )
 
+    # 4. Обновляем меню для пользователя
     await callback.message.edit_caption(
         caption=text,
         reply_markup=get_throws_list_menu(
@@ -425,43 +431,67 @@ async def filter_by_zone(callback: CallbackQuery):
             limit=LIMIT
         )
     )
-    await callback.answer()
 
 # ==================== ПЕРЕКЛЮЧЕНИЕ СТОРОНЫ (Т/СТ) ====================
 
 @dp.callback_query(F.data.startswith("side_"))
 async def switch_side(callback: CallbackQuery):
     """Обработчик переключения между Т и СТ"""
+    # 1. Быстро проверяем доступ, чтобы отсечь неавторизованных
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
+    # Разбираем callback_data
     try:
         _, map_name, grenade_type, zone, new_side = callback.data.split("_")
     except ValueError:
         await callback.answer("Ошибка данных.", show_alert=True)
         return
 
+    # 2. Данные валидны, доступ есть — СРАЗУ гасим часики загрузки в Telegram
+    await callback.answer()
+
     LIMIT = 5
     CURRENT_PAGE = 1
     OFFSET = 0
+    
+    possible_zones = ["a", "b", "mid", "situational"]
 
     if zone == "all":
+        zone_for_kb = "all"
+        
+        # Запускаем ВСЕ запросы количества для всех зон одновременно
+        count_tasks = [
+            get_throws_count(map_name, grenade_type, zone=z, side=new_side)
+            for z in possible_zones
+        ]
+        counts = await asyncio.gather(*count_tasks)
+        total_count = sum(counts)
+
+        # Запускаем ВСЕ запросы раскидок для всех зон одновременно
+        throws_tasks = [
+            get_throws(map_name, grenade_type, zone=z, side=new_side, limit=LIMIT, offset=OFFSET)
+            for z in possible_zones
+        ]
+        throws_results = await asyncio.gather(*throws_tasks)
+        
+        # Собираем элементы в один список и обрезаем по лимиту
         throws_list = []
-        total_count = 0
-        for possible_zone in ["a", "b", "mid", "situational"]:
-            count = await get_throws_count(map_name, grenade_type, zone=possible_zone, side=new_side)
-            total_count += count
-            items = await get_throws(map_name, grenade_type, zone=possible_zone, side=new_side, limit=LIMIT, offset=OFFSET)
+        for items in throws_results:
             if items:
                 throws_list.extend(items)
         throws_list = throws_list[:LIMIT]
-        zone_for_kb = "all"
+        
     else:
-        total_count = await get_throws_count(map_name, grenade_type, zone=zone, side=new_side)
-        throws_list = await get_throws(map_name, grenade_type, zone=zone, side=new_side, limit=LIMIT, offset=OFFSET)
         zone_for_kb = zone
+        # Для конкретной зоны запускаем оба запроса параллельно
+        total_count, throws_list = await asyncio.gather(
+            get_throws_count(map_name, grenade_type, zone=zone, side=new_side),
+            get_throws(map_name, grenade_type, zone=zone, side=new_side, limit=LIMIT, offset=OFFSET)
+        )
 
+    # Словари и подготовка интерфейса
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки", "molotov": "Молики",
         "insta": "Insta Смоки", "oneway": "One-Way Смоки"
@@ -474,6 +504,7 @@ async def switch_side(callback: CallbackQuery):
         "Выбирайте сторону кнопками-вкладками ниже:"
     )
 
+    # 3. Обновляем вкладку интерфейса
     await callback.message.edit_caption(
         caption=text,
         reply_markup=get_throws_list_menu(
@@ -487,7 +518,6 @@ async def switch_side(callback: CallbackQuery):
             limit=LIMIT
         )
     )
-    await callback.answer()
 
 
 # ==================== ПАГИНАЦИЯ СПИСКА РАСКИДОК ====================
@@ -495,10 +525,12 @@ async def switch_side(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("listpage_"))
 async def list_pagination(callback: CallbackQuery):
     """Обработчик переключения страниц в списке раскидок"""
+    # 1. Быстро проверяем доступ, чтобы отсечь неавторизованных пользователей
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
+    # Разбираем callback_data
     try:
         _, map_name, grenade_type, zone, side, page = callback.data.split("_")
         page = int(page)
@@ -506,25 +538,48 @@ async def list_pagination(callback: CallbackQuery):
         await callback.answer("Ошибка данных.", show_alert=True)
         return
 
+    # 2. Данные валидны, доступ подтвержден — СРАЗУ убираем анимацию загрузки кнопки в Telegram
+    await callback.answer()
+
     LIMIT = 5
     OFFSET = (page - 1) * LIMIT
+    
+    possible_zones = ["a", "b", "mid", "situational"]
 
     if grenade_type in ["insta", "oneway"]:
+        zone_for_kb = "all"
+        
+        # Запускаем параллельный сбор количества раскидок по всем зонам
+        count_tasks = [
+            get_throws_count(map_name, grenade_type, zone=z, side=side)
+            for z in possible_zones
+        ]
+        counts = await asyncio.gather(*count_tasks)
+        total_count = sum(counts)
+
+        # Запускаем параллельный сбор самих раскидок по всем зонам с учетом OFFSET
+        throws_tasks = [
+            get_throws(map_name, grenade_type, zone=z, side=side, limit=LIMIT, offset=OFFSET)
+            for z in possible_zones
+        ]
+        throws_results = await asyncio.gather(*throws_tasks)
+        
+        # Объединяем списки и берем только нужный лимит страниц
         throws_list = []
-        total_count = 0
-        for possible_zone in ["a", "b", "mid", "situational"]:
-            count = await get_throws_count(map_name, grenade_type, zone=possible_zone, side=side)
-            total_count += count
-            items = await get_throws(map_name, grenade_type, zone=possible_zone, side=side, limit=LIMIT, offset=OFFSET)
+        for items in throws_results:
             if items:
                 throws_list.extend(items)
         throws_list = throws_list[:LIMIT]
-        zone_for_kb = "all"
+        
     else:
-        total_count = await get_throws_count(map_name, grenade_type, zone=zone, side=side)
-        throws_list = await get_throws(map_name, grenade_type, zone=zone, side=side, limit=LIMIT, offset=OFFSET)
         zone_for_kb = zone
+        # Для стандартных одиночных зон выполняем оба запроса к БД параллельно
+        total_count, throws_list = await asyncio.gather(
+            get_throws_count(map_name, grenade_type, zone=zone, side=side),
+            get_throws(map_name, grenade_type, zone=zone, side=side, limit=LIMIT, offset=OFFSET)
+        )
 
+    # Словари наименований гранат
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки", "molotov": "Молики",
         "insta": "Insta Смоки", "oneway": "One-Way Смоки"
@@ -537,6 +592,7 @@ async def list_pagination(callback: CallbackQuery):
         "Выбирайте сторону кнопками-вкладками ниже:"
     )
 
+    # 3. Обновляем интерфейс меню (перелистываем страницу)
     await callback.message.edit_caption(
         caption=text,
         reply_markup=get_throws_list_menu(
@@ -550,7 +606,6 @@ async def list_pagination(callback: CallbackQuery):
             limit=LIMIT
         )
     )
-    await callback.answer()
 
 # ==================== ПРОСМОТР РАСКИДКИ ====================
 
@@ -558,14 +613,18 @@ YOUR_ADMIN_ID = 2129614624
 
 @dp.callback_query(F.data.startswith("view_"))
 async def view_throw_page_one(callback: CallbackQuery):
-    if not await check_access(callback.from_user.id):
+    throw_id = int(callback.data.split("_")[-1])
+
+    # 1. Запускаем проверку доступа и получение деталей раскидки параллельно
+    has_access, throw = await asyncio.gather(
+        check_access(callback.from_user.id),
+        get_throw_detail(throw_id)
+    )
+
+    if not has_access:
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
-
-    throw_id = int(callback.data.split("_")[-1])
-    throw = await get_throw_detail(throw_id)
-    
     if not throw:
         await callback.answer(f"{emoji('cross')} Раскидка не найдена.", show_alert=True)
         return
@@ -573,8 +632,13 @@ async def view_throw_page_one(callback: CallbackQuery):
     if len(throw) < 12:
         await callback.answer(f"{emoji('cross')} Ошибка данных раскидки.", show_alert=True)
         return
+
+    # 2. Данные на месте — моментально гасим анимацию загрузки кнопки в Telegram
+    await callback.answer()
         
     _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
+    
+    # 3. Быстро запрашиваем комбо-раскидки, если они привязаны
     combo_list = await get_combo_throws(combo_id) if combo_id else []
     
     caption = (
@@ -590,24 +654,22 @@ async def view_throw_page_one(callback: CallbackQuery):
             if btn.callback_data == "back_to_list_placeholder":
                 btn.callback_data = f"{g_type}_{map_name}"
 
+    # 4. Обновляем интерфейс
     try:
-        await callback.message.delete()
+        # Пытаемся отправить как новое фото
         await callback.message.answer_photo(photo=photo_pos, caption=caption, parse_mode="HTML", reply_markup=markup)
-    except Exception as e:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+    except Exception:
+        # Если отправка фото не удалась, редактируем текущее медиа
         media = InputMediaPhoto(media=photo_pos, caption=caption, parse_mode="HTML")
         await callback.message.edit_media(media=media, reply_markup=markup)
-        
-    await callback.answer()
-
 
 @dp.callback_query(F.data.startswith("page_"))
 async def switch_pages(callback: CallbackQuery):
-    if not await check_access(callback.from_user.id):
-        await callback.answer("Доступ ограничен.", show_alert=True)
-        return
-
     parts = callback.data.split("_")
-
     if len(parts) != 3:
         await callback.answer("Ошибка данных.", show_alert=True)
         return
@@ -615,36 +677,39 @@ async def switch_pages(callback: CallbackQuery):
     throw_id = int(parts[1])
     page = int(parts[2])
 
-    throw = await get_throw_detail(throw_id)
+    # 1. Запускаем параллельно проверку прав и извлечение информации по раскидке
+    has_access, throw = await asyncio.gather(
+        check_access(callback.from_user.id),
+        get_throw_detail(throw_id)
+    )
+
+    if not has_access:
+        await callback.answer("Доступ ограничен.", show_alert=True)
+        return
+
     if not throw or len(throw) < 12:
         await callback.answer("Раскидка не найдена.", show_alert=True)
         return
 
+    # 2. Доступ подтвержден, раскидка найдена — СРАЗУ гасим часики загрузки
+    await callback.answer()
+
     (
-        id_,
-        map_name,
-        g_type,
-        title,
-        photo_pos,
-        photo_aim,
-        photo_result,
-        desc,
-        throw_type,
-        zone,
-        side,
-        combo_id,
+        id_, map_name, g_type, title, photo_pos, photo_aim, photo_result,
+        desc, throw_type, zone, side, combo_id
     ) = throw[:12]
 
+    # 3. Быстро запрашиваем список комбинаций
     combo_list = await get_combo_throws(combo_id) if combo_id else []
 
+    # Определяем медиафайл и текст в зависимости от выбранной вкладки (страницы)
     if page == 1:
         photo = photo_pos
         view_type = "pos"
         caption = (
             f"{emoji('geo')} <b>{title}</b> (ПОЗИЦИЯ)\n\n"
             f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n"
-            f"{emoji('grenade_jumptype')} <b>Тип броска:</b> "
-            f"<code>{throw_type}</code>"
+            f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>"
         )
     elif page == 2:
         photo = photo_aim
@@ -652,8 +717,7 @@ async def switch_pages(callback: CallbackQuery):
         caption = (
             f"{emoji('target')} <b>{title}</b> (ПРИЦЕЛ)\n\n"
             "Повторите наводку прицела по изображению.\n"
-            f"{emoji('grenade_jumptype')} <b>Бросок:</b> "
-            f"<code>{throw_type}</code>"
+            f"{emoji('grenade_jumptype')} <b>Бросок:</b> <code>{throw_type}</code>"
         )
     elif page == 3:
         photo = photo_result or photo_aim
@@ -663,7 +727,6 @@ async def switch_pages(callback: CallbackQuery):
             "Граната успешно раскрывается и закрывает обзор противнику."
         )
     else:
-        await callback.answer("Такой страницы нет.", show_alert=True)
         return
 
     markup = get_combo_page_kb(
@@ -685,8 +748,8 @@ async def switch_pages(callback: CallbackQuery):
         parse_mode="HTML",
     )
 
+    # 4. Перерисовываем медиавкладку
     await callback.message.edit_media(media=media, reply_markup=markup)
-    await callback.answer()
 
 
 # ==================== РЕДАКТИРОВАНИЕ РАСКИДКИ ====================
@@ -787,30 +850,38 @@ async def confirm_delete_throw(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "profile")
 async def show_profile(callback: CallbackQuery):
+    # 1. Отвечаем Telegram СРАЗУ, чтобы избежать таймаута (ошибки query is too old)
+    await callback.answer()
 
+    # 2. Сначала получаем базовую информацию о пользователе
     user_info = await get_user_info(callback.from_user.id)
     if not user_info:
         await callback.message.edit_caption(
             caption=f"{emoji('cross')} <b>Профиль не найден</b>",
             reply_markup=get_back_button()
         )
-        await callback.answer()
         return
     
+    # Распаковываем базовую информацию (если referrer_id или balance_days понадобятся дальше)
     access_until, balance_days, referrer_id = user_info
-    has_access = await check_access(callback.from_user.id)
-    ref_count = await get_referral_count(callback.from_user.id)
     
+    # 3. 🔥 ОПТИМИЗАЦИЯ: Запускаем оставшиеся три запроса к БД ПАРАЛЛЕЛЬНО
+    has_access, ref_count, date_text = await asyncio.gather(
+        check_access(callback.from_user.id),
+        get_referral_count(callback.from_user.id),
+        get_subscription_text(callback.from_user.id)
+    )
+    
+    # 4. Собираем интерфейс и эмодзи
     profile_icon = emoji("profile")
-    check = emoji("check")
-    cross = emoji("cross")
     account_icon = emoji("account_icon")
     calendar = emoji("calendar")
     key = emoji("key")
-    status = check if has_access else cross
-    status_text = "Активен" if has_access else "Неактивен"
-    date_text = await get_subscription_text(callback.from_user.id)
     
+    status_text = "Активен" if has_access else "Неактивен"
+    
+    # Примечание: Если вам нужно вывести количество рефералов в текст профиля, 
+    # вы можете добавить переменную {ref_count} в строку ниже.
     text = (
         f"{profile_icon} <b>Личный кабинет</b>\n\n"
         f"{account_icon} Имя: {callback.from_user.full_name}\n"
@@ -818,22 +889,29 @@ async def show_profile(callback: CallbackQuery):
         f"{key} Статус: {status_text}\n"
     )
     
+    # 5. Обновляем интерфейс сообщения
     await callback.message.edit_caption(
         caption=text,
         reply_markup=get_profile_menu()
     )
-    await callback.answer()
+
 
 
 # ==================== РЕФЕРАЛКА ====================
 
 @dp.callback_query(F.data == "referral")
 async def show_referral(callback: CallbackQuery):
+    # 1. Отвечаем Telegram СРАЗУ, чтобы убрать анимацию загрузки кнопки
+    await callback.answer()
 
-    bot_info = await bot.get_me()
+    # 2. 🔥 ОПТИМИЗАЦИЯ: Запускаем получение информации о боте и подсчет рефералов ПАРАЛЛЕЛЬНО
+    bot_info, ref_count = await asyncio.gather(
+        callback.bot.get_me(),
+        get_referral_count(callback.from_user.id)
+    )
+    
     bot_username = bot_info.username
     ref_link = f"https://t.me/{bot_username}?start=ref_{callback.from_user.id}"
-    ref_count = await get_referral_count(callback.from_user.id)
     
     referral_icon = emoji("referral")
     check = emoji("check")
@@ -845,14 +923,16 @@ async def show_referral(callback: CallbackQuery):
         "Делись ссылкой и получай бесплатный доступ!"
     )
     
+    # 3. Обновляем интерфейс меню
     await callback.message.edit_caption(
         caption=text,
         reply_markup=get_referral_menu(ref_link, ref_count)
     )
-    await callback.answer()
 
 @dp.callback_query(F.data == "copy_referral")
 async def copy_referral(callback: CallbackQuery):
+    # Здесь нет тяжелых операций, но вызов callback.answer() 
+    # является единственным действием, поэтому он остается как есть.
     await callback.answer(
         "Скопируйте ссылку из сообщения выше.",
         show_alert=True
@@ -1000,9 +1080,6 @@ async def back_to_list(callback: CallbackQuery):
         reply_markup=get_maps_keyboard()
     )
     await callback.answer()
-
-
-# ==================== ЗАПУСК БОТА ====================
 
 # ==================== ЗАПУСК БОТА ====================
 

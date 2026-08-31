@@ -15,6 +15,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 
+from aiogram_sentinel import Sentinel, SentinelConfig
 from dotenv import load_dotenv
 
 import aiosqlite
@@ -994,8 +995,18 @@ async def back_to_list(callback: CallbackQuery):
 
 # ==================== ЗАПУСК БОТА ====================
 
+# ==================== ЗАПУСК БОТА ====================
+
 async def main():
     await init_db()
+
+    # ========== НАСТРОЙКА ТРОТТЛИНГА ==========
+    config = SentinelConfig(
+        throttling_default_max=5,          # максимум 5 запросов
+        throttling_default_per_seconds=10, # за 10 секунд
+    )
+    await Sentinel.setup(dp, config)
+    # =========================================
 
     dp.include_router(admin_router) 
     asyncio.create_task(expiry_notifications_worker())

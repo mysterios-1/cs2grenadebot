@@ -112,12 +112,12 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
         z_b = "» Плент Б «" if current_zone == "b" else "Плент Б"
         z_mid = "» Мид «" if current_zone == "mid" else "Мид"
         z_sit = "» Ситуация «" if current_zone == "situational" else "Ситуация"
-        
+    
         builder.row(
             create_btn("plant_a", z_a, callback_data=f"filter_{map_name}_{grenade_type}_a_{current_side}"),
             create_btn("plant_b", z_b, callback_data=f"filter_{map_name}_{grenade_type}_b_{current_side}"),
             create_btn("mid", z_mid, callback_data=f"filter_{map_name}_{grenade_type}_mid_{current_side}"),
-            create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational_{current_side}")
+            create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational")  # ← УБРАЛ _side!
         )
         builder.adjust(2, 2, 2)
     else:

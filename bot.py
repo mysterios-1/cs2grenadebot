@@ -372,13 +372,22 @@ async def show_grenade_type(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("filter_"))
 async def filter_by_zone(callback: CallbackQuery):
-    """Обработчик нажатия на кнопки зон (Плент А, Плент Б, Мид, Ситуация)"""
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
     try:
-        _, map_name, grenade_type, zone, side = callback.data.split("_")
+        parts = callback.data.split("_")
+        # filter_mirage_smoke_a_t (5 частей)
+        # filter_mirage_smoke_situational (4 части)
+        if len(parts) == 5:
+            _, map_name, grenade_type, zone, side = parts
+        elif len(parts) == 4:
+            _, map_name, grenade_type, zone = parts
+            side = "t"  # Значение по умолчанию, не используется для situational
+        else:
+            await callback.answer("Ошибка данных.", show_alert=True)
+            return
     except ValueError:
         await callback.answer("Ошибка данных.", show_alert=True)
         return

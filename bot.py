@@ -255,12 +255,12 @@ from aiogram.types import CallbackQuery
     | F.data.startswith("oneway_")
 )
 async def show_grenade_type(callback: CallbackQuery):
-    # 1. Быстро проверяем доступ, чтобы сразу отсечь неавторизованных
+    # 1. Быстро проверяем доступ
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
-    # 2. Сразу гасим часики загрузки, так как доступ есть
+    # 2. Гасим часики
     await callback.answer()
 
     grenade_type, map_name = callback.data.split("_", 1)
@@ -275,7 +275,6 @@ async def show_grenade_type(callback: CallbackQuery):
     if grenade_type in {"insta", "oneway"}:
         kb_zone = "all"
         
-        # Запускаем ВСЕ запросы количества параллельно (4 запроса одновременно за доли секунды)
         count_tasks = [
             get_throws_count(map_name, grenade_type, zone=z, side=DEFAULT_SIDE)
             for z in zones_to_check
@@ -283,14 +282,12 @@ async def show_grenade_type(callback: CallbackQuery):
         counts = await asyncio.gather(*count_tasks)
         total_count = sum(counts)
 
-        # Оптимизированный сбор раскидок: запрашиваем зоны параллельно
         throws_tasks = [
             get_throws(map_name, grenade_type, zone=z, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
             for z in zones_to_check
         ]
         throws_results = await asyncio.gather(*throws_tasks)
         
-        # Объединяем результаты в один список и берем только нужный ЛИМИТ
         throws_list = []
         for items in throws_results:
             throws_list.extend(items)
@@ -299,7 +296,6 @@ async def show_grenade_type(callback: CallbackQuery):
     else:
         kb_zone = "a"
         
-        # Для обычных гранат запускаем получение количества и самих данных параллельно
         total_count, throws_list = await asyncio.gather(
             get_throws_count(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE),
             get_throws(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
@@ -335,15 +331,22 @@ async def show_grenade_type(callback: CallbackQuery):
         limit=LIMIT,
     )
 
-    # 3. Определяем, какое фото нам нужно получить (параллельно отправке не получится, но сделаем это быстро)
-    if map_name.lower() == "mirage" and grenade_type == "insta":
-        photo_key = "mirage_resp_t"
-    else:
-        photo_key = "main_menu"
+    # ✅ ФОТО ДЛЯ INSTA НА ВСЕХ КАРТАХ
+    # Список карт, для которых есть Insta-фото
+    insta_maps = ["mirage", "dust2", "inferno", "nuke", "anubis", "ancient"]
+    
+    if grenade_type == "insta" and map_name.lower() in insta_maps:
+        # Пытаемся получить фото для конкретной карты
+        photo_key = f"{map_name.lower()}_resp_t"
+        bot_photo = await get_bot_photo(photo_key)
         
-    bot_photo = await get_bot_photo(photo_key)
+        # Если фото для этой карты нет — используем главное меню
+        if not bot_photo:
+            bot_photo = await get_bot_photo("main_menu")
+    else:
+        bot_photo = await get_bot_photo("main_menu")
 
-    # 4. Сначала отправляем новое сообщение, чтобы у юзера не пропадал интерфейс
+    # 4. Отправляем новое сообщение
     if bot_photo:
         await callback.message.answer_photo(
             photo=bot_photo,
@@ -358,7 +361,7 @@ async def show_grenade_type(callback: CallbackQuery):
             parse_mode="HTML",
         )
 
-    # 5. И только в самом конце безболезненно удаляем старое сообщение
+    # 5. Удаляем старое сообщение
     try:
         await callback.message.delete()
     except Exception:

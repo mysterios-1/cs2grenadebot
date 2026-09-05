@@ -265,7 +265,7 @@ async def show_grenade_type(callback: CallbackQuery):
 
     grenade_type, map_name = callback.data.split("_", 1)
 
-    LIMIT = 5
+    LIMIT = 7
     CURRENT_PAGE = 1
     DEFAULT_SIDE = "t"
     OFFSET = 0
@@ -396,7 +396,7 @@ async def filter_by_zone(callback: CallbackQuery):
     # 2. Данные валидны, доступ есть — СРАЗУ гасим часики загрузки в Telegram
     await callback.answer()
 
-    LIMIT = 5
+    LIMIT = 7
     CURRENT_PAGE = 1
     OFFSET = (CURRENT_PAGE - 1) * LIMIT
 
@@ -455,7 +455,7 @@ async def switch_side(callback: CallbackQuery):
     # 2. Данные валидны, доступ есть — СРАЗУ гасим часики загрузки в Telegram
     await callback.answer()
 
-    LIMIT = 5
+    LIMIT = 7
     CURRENT_PAGE = 1
     OFFSET = 0
     
@@ -544,7 +544,7 @@ async def list_pagination(callback: CallbackQuery):
     # 2. Данные валидны, доступ подтвержден — СРАЗУ убираем анимацию загрузки кнопки в Telegram
     await callback.answer()
 
-    LIMIT = 5
+    LIMIT = 7
     OFFSET = (page - 1) * LIMIT
     
     possible_zones = ["a", "b", "mid", "situational"]

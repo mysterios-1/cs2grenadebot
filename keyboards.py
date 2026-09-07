@@ -84,29 +84,27 @@ def get_map_detail_menu(map_name: str) -> InlineKeyboardMarkup:
 def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, page: int, total_count: int, current_zone: str = "a", current_side: str = "t", limit: int = 5) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # Кнопки сторон (Т/СТ)
-    if current_side == "t":
-        side_t = "» За Т «"
-        emoji_t = "t"
-        side_ct = "За СТ"
-        emoji_ct = None
-    else:
-        side_t = "За Т"
-        emoji_t = None
-        side_ct = "» За СТ «"
-        emoji_ct = "ct"
+    # Кнопки сторон (Т/СТ) — показываем ТОЛЬКО если это не ситуационная зона
+    if current_zone != "situational":
+        if current_side == "t":
+            side_t = "» За Т «"
+            emoji_t = "t"
+            side_ct = "За СТ"
+            emoji_ct = None
+        else:
+            side_t = "За Т"
+            emoji_t = None
+            side_ct = "» За СТ «"
+            emoji_ct = "ct"
+        
+        cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
+        
+        builder.row(
+            create_btn(emoji_t, side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t") if emoji_t else InlineKeyboardButton(text=side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t"),
+            create_btn(emoji_ct, side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct") if emoji_ct else InlineKeyboardButton(text=side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct")
+        )
     
-    # 💡 ВАЖНОЕ ИСПРАВЛЕНИЕ ДЛЯ CALLBACK_DATA:
-    # Если это insta или oneway, мы принудительно прописываем в callback_data кнопок сторон зону "all",
-    # чтобы при переключении стороны фильтр по конкретной зоне не ломал выдачу.
-    cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
-    
-    builder.row(
-        create_btn(emoji_t, side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t") if emoji_t else InlineKeyboardButton(text=side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t"),
-        create_btn(emoji_ct, side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct") if emoji_ct else InlineKeyboardButton(text=side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct")
-    )
-    
-    # Кнопки зон - показываем ТОЛЬКО для обычных гранат
+    # Кнопки зон - показываем для обычных гранат
     if grenade_type not in ["insta", "oneway"]:
         z_a = "» Плент А «" if current_zone == "a" else "Плент А"
         z_b = "» Плент Б «" if current_zone == "b" else "Плент Б"
@@ -117,11 +115,15 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
             create_btn("plant_a", z_a, callback_data=f"filter_{map_name}_{grenade_type}_a_{current_side}"),
             create_btn("plant_b", z_b, callback_data=f"filter_{map_name}_{grenade_type}_b_{current_side}"),
             create_btn("mid", z_mid, callback_data=f"filter_{map_name}_{grenade_type}_mid_{current_side}"),
-            create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational")  # ← УБРАЛ _side!
+            create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational_{current_side}")
         )
-        builder.adjust(2, 2, 2)
+        # Если скрыли кнопки сторон, сделаем другую сетку
+        if current_zone == "situational":
+            builder.adjust(2, 2)
+        else:
+            builder.adjust(2, 2, 2)
     else:
-        builder.adjust(2, 2)
+        builder.adjust(2)
     
     # Список раскидок
     for throw_id, title in throws_list:
@@ -131,6 +133,7 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
     if total_pages == 0: total_pages = 1
 
     nav_row = []
+    cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
     if page > 1:
         nav_row.append(create_btn("left", "Пред.", callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"))
     

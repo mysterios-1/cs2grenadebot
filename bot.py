@@ -249,12 +249,11 @@ from aiogram.types import CallbackQuery
 # ==================== ГРАНАТЫ ====================
 
 @dp.callback_query(
-    F.data.startswith("smoke_")
-    | F.data.startswith("flash_")
-    | F.data.startswith("he_")
-    | F.data.startswith("molotov_")
-    | F.data.startswith("insta_")
-    | F.data.startswith("oneway_")
+    F.data.startswith("smoke_") | F.data.startswith("flash_") |
+    F.data.startswith("he_") | F.data.startswith("molotov_") |
+    F.data.startswith("insta_") | F.data.startswith("oneway_") |
+    F.data.startswith("side_") | F.data.startswith("filter_") |
+    F.data.startswith("listpage_")
 )
 async def show_grenade_type(callback: CallbackQuery):
     if not await check_access(callback.from_user.id):
@@ -262,100 +261,90 @@ async def show_grenade_type(callback: CallbackQuery):
         return
 
     await callback.answer()
-
-    grenade_type, map_name = callback.data.split("_", 1)
+    
+    raw_data = callback.data
+    
+    # 1. Парсим callback_data
+    if raw_data.startswith("side_"):
+        # side_map_grenade_zone_side
+        _, map_name, grenade_type, current_zone, current_side = raw_data.split("_")
+        current_page = 1
+    elif raw_data.startswith("filter_"):
+        # filter_map_grenade_zone_side
+        _, map_name, grenade_type, current_zone, current_side = raw_data.split("_")
+        current_page = 1
+    elif raw_data.startswith("listpage_"):
+        # listpage_map_grenade_zone_side_page
+        _, map_name, grenade_type, current_zone, current_side, page_str = raw_data.split("_")
+        current_page = int(page_str)
+    else:
+        # Первичный клик по категории (например, smoke_mirage)
+        grenade_type, map_name = raw_data.split("_", 1)
+        current_side = "t"
+        current_zone = "all" if grenade_type in {"insta", "oneway"} else "a"
+        current_page = 1
 
     LIMIT = 7
-    CURRENT_PAGE = 1
-    DEFAULT_SIDE = "t"
-    OFFSET = 0
-    
-    zones_to_check = ("a", "b", "mid", "situational")
+    OFFSET = (current_page - 1) * LIMIT
 
-    if grenade_type in {"insta", "oneway"}:
-        kb_zone = "all"
-        
-        count_tasks = [
-            get_throws_count(map_name, grenade_type, zone=z, side=DEFAULT_SIDE)
-            for z in zones_to_check
-        ]
-        counts = await asyncio.gather(*count_tasks)
-        total_count = sum(counts)
+    # 2. Получаем данные из БД
+    # Метод get_throws уже сам умеет игнорировать side, если zone == "situational"
+    total_count, throws_list = await asyncio.gather(
+        get_throws_count(map_name, grenade_type, zone=current_zone, side=current_side),
+        get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET)
+    )
 
-        throws_tasks = [
-            get_throws(map_name, grenade_type, zone=z, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
-            for z in zones_to_check
-        ]
-        throws_results = await asyncio.gather(*throws_tasks)
-        
-        throws_list = []
-        for items in throws_results:
-            throws_list.extend(items)
-        throws_list = throws_list[:LIMIT]
-
-    else:
-        kb_zone = "a"
-        
-        total_count, throws_list = await asyncio.gather(
-            get_throws_count(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE),
-            get_throws(map_name, grenade_type, zone=kb_zone, side=DEFAULT_SIDE, limit=LIMIT, offset=OFFSET)
-        )
-
+    # 3. Формируем текст
     grenade_names = {
-        "smoke": "Смоки",
-        "flash": "Флешки",
-        "he": "Хаешки",
-        "molotov": "Молики",
-        "insta": "Insta Смоки",
-        "oneway": "One-Way Смоки",
+        "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки",
+        "molotov": "Молики", "insta": "Insta Смоки", "oneway": "One-Way Смоки",
     }
-
     grenade_name = grenade_names.get(grenade_type, "Гранаты")
     emoji_name = grenade_type if grenade_type in {"smoke", "flash", "he", "molotov"} else "smoke"
     grenade_emoji = emoji(emoji_name)
 
+    if current_zone == "situational":
+        side_text = "<b>Ситуационные (Для обеих сторон)</b>"
+    else:
+        side_text = f"Сторона: <b>{'Атака (Т)' if current_side == 't' else 'Защита (СТ)'}</b>"
+
     text = (
-        f"{grenade_emoji} <b>{grenade_name}</b> "
-        f"на карте {map_name.capitalize()}\n\n"
-        "Выбирайте сторону кнопками-вкладками ниже:"
+        f"{grenade_emoji} <b>{grenade_name}</b> на карте {map_name.capitalize()}\n\n"
+        f"Выбран раздел: {side_text}\n"
+        "Выбирайте нужные фильтры кнопками ниже:"
     )
 
     reply_markup = get_throws_list_menu(
         map_name=map_name,
         grenade_type=grenade_type,
         throws_list=throws_list,
-        page=CURRENT_PAGE,
+        page=current_page,
         total_count=total_count,
-        current_zone=kb_zone,
-        current_side=DEFAULT_SIDE,
+        current_zone=current_zone,
+        current_side=current_side,
         limit=LIMIT,
     )
 
-    # ✅ ФОТО ДЛЯ INSTA — УЧИТЫВАЕМ СТОРОНУ!
+    # 4. Логика подбора фото
     insta_maps = ["mirage", "dust2", "inferno", "nuke", "anubis", "ancient"]
     
-    if grenade_type == "insta" and map_name.lower() in insta_maps:
-        # Используем ту сторону, которая выбрана в меню (DEFAULT_SIDE)
-        photo_key = f"{map_name.lower()}_resp_{DEFAULT_SIDE}"
-        bot_photo = await get_bot_photo(photo_key)
-        
-        if not bot_photo:
-            bot_photo = await get_bot_photo("main_menu")
+    if current_zone == "situational":
+        # Для ситуационных гранат берем общее фото карты или дефолтное меню
+        bot_photo = await get_bot_photo(f"{map_name.lower()}_situational") or await get_bot_photo("main_menu")
+    elif grenade_type == "insta" and map_name.lower() in insta_maps:
+        photo_key = f"{map_name.lower()}_resp_{current_side.lower()}"
+        bot_photo = await get_bot_photo(photo_key) or await get_bot_photo("main_menu")
     else:
         bot_photo = await get_bot_photo("main_menu")
 
+    # Отправляем сообщение
     if bot_photo:
         await callback.message.answer_photo(
-            photo=bot_photo,
-            caption=text,
-            reply_markup=reply_markup,
-            parse_mode="HTML",
+            photo=bot_photo, caption=text, reply_markup=reply_markup, parse_mode="HTML"
         )
     else:
         await callback.message.answer(
-            text=text,
-            reply_markup=reply_markup,
-            parse_mode="HTML",
+            text=text, reply_markup=reply_markup, parse_mode="HTML"
         )
 
     try:

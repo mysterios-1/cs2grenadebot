@@ -278,23 +278,51 @@ async def show_grenade_type(callback: CallbackQuery):
         _, map_name, grenade_type, current_zone, current_side, page_str = raw_data.split("_")
         current_page = int(page_str)
     else:
-        # Первичный клик по категории (например, smoke_mirage)
+        # Первичный клик по категории (например, insta_mirage)
         grenade_type, map_name = raw_data.split("_", 1)
         current_side = "t"
+        # Для инста/уанвей изначально ставим "all", чтобы запросить все зоны
         current_zone = "all" if grenade_type in {"insta", "oneway"} else "a"
         current_page = 1
 
     LIMIT = 7
     OFFSET = (current_page - 1) * LIMIT
 
-    # 2. Получаем данные из БД
-    # Метод get_throws уже сам умеет игнорировать side, если zone == "situational"
-    total_count, throws_list = await asyncio.gather(
-        get_throws_count(map_name, grenade_type, zone=current_zone, side=current_side),
-        get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET)
-    )
+    # 2. Получаем данные из БД с объединением зон для insta и oneway
+    if grenade_type in {"insta", "oneway"} and current_zone == "all":
+        # Сканируем эти зоны в БД, так как вы сохраняете инста-смоки в конкретные зоны (например, mid)
+        zones_to_check = ("a", "b", "mid", "situational")
+        
+        # Получаем общее количество во всех зонах для пагинации
+        count_tasks = [
+            get_throws_count(map_name, grenade_type, zone=z, side=current_side)
+            for z in zones_to_check
+        ]
+        counts = await asyncio.gather(*count_tasks)
+        total_count = sum(counts)
 
-    # 3. Формируем текст
+        # Достаем раскидки из всех зон
+        throws_tasks = [
+            get_throws(map_name, grenade_type, zone=z, side=current_side, limit=LIMIT + OFFSET, offset=0)
+            for z in zones_to_check
+        ]
+        throws_results = await asyncio.gather(*throws_tasks)
+        
+        # Объединяем результаты в один плоский список
+        all_throws = []
+        for items in throws_results:
+            all_throws.extend(items)
+            
+        # Применяем пагинацию (OFFSET и LIMIT) уже на объединенном списке
+        throws_list = all_throws[OFFSET : OFFSET + LIMIT]
+    else:
+        # Обычные гранаты или конкретно выбранная зона
+        total_count, throws_list = await asyncio.gather(
+            get_throws_count(map_name, grenade_type, zone=current_zone, side=current_side),
+            get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET)
+        )
+
+    # 3. Формируем текст интерфейса
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки",
         "molotov": "Молики", "insta": "Insta Смоки", "oneway": "One-Way Смоки",
@@ -329,15 +357,15 @@ async def show_grenade_type(callback: CallbackQuery):
     insta_maps = ["mirage", "dust2", "inferno", "nuke", "anubis", "ancient"]
     
     if current_zone == "situational":
-        # Для ситуационных гранат берем общее фото карты или дефолтное меню
         bot_photo = await get_bot_photo(f"{map_name.lower()}_situational") or await get_bot_photo("main_menu")
     elif grenade_type == "insta" and map_name.lower() in insta_maps:
+        # Теперь CURRENT_SIDE динамическая и фото СТ-респа на Мираже будет отображаться корректно!
         photo_key = f"{map_name.lower()}_resp_{current_side.lower()}"
         bot_photo = await get_bot_photo(photo_key) or await get_bot_photo("main_menu")
     else:
         bot_photo = await get_bot_photo("main_menu")
 
-    # Отправляем сообщение
+    # Отправка сообщения
     if bot_photo:
         await callback.message.answer_photo(
             photo=bot_photo, caption=text, reply_markup=reply_markup, parse_mode="HTML"
@@ -351,6 +379,7 @@ async def show_grenade_type(callback: CallbackQuery):
         await callback.message.delete()
     except Exception:
         pass
+
 
 # ==================== ФИЛЬТР ПО ЗОНАМ ====================
 

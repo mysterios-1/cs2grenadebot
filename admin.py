@@ -7,9 +7,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import aiosqlite
+import bot
 import database as db
 import keyboards as kb
 from aiogram.filters import Command, CommandStart
+from PIL import Image, ImageDraw
+import io
+import aiosqlite
 
 admin_router = Router()
 ADMINS = [2129614624]  # 👈 Твой Telegram ID здесь
@@ -460,3 +464,92 @@ async def list_users(message: Message):
     
     if text:
         await message.answer(text, parse_mode="HTML")
+
+
+@admin_router.message(Command("focus"))
+async def focus_all_aims(message: Message):
+    """Зумит прицелы всех раскидок прямо в боте"""
+    if message.from_user.id not in ADMINS:
+        await message.answer("❌ Нет прав")
+        return
+    
+    # Сразу отвечаем, что процесс начался
+    status_msg = await message.answer("🔄 Начинаю обработку фото прицелов...")
+    
+    # Подключаемся к БД
+    conn = await aiosqlite.connect(db.DB_PATH)
+    cursor = await conn.execute("SELECT id, title, photo_aim FROM throws WHERE photo_aim IS NOT NULL")
+    rows = await cursor.fetchall()
+    
+    if not rows:
+        await status_msg.edit_text("❌ В БД нет фото прицелов")
+        await conn.close()
+        return
+    
+    total = len(rows)
+    updated = 0
+    errors = 0
+    
+    await status_msg.edit_text(f"🔄 Найдено {total} фото. Начинаю обработку...")
+    
+    for i, (throw_id, title, old_file_id) in enumerate(rows, 1):
+        try:
+            # 1. Скачиваем фото
+            file = await bot.get_file(old_file_id)
+            file_bytes = await bot.download_file(file.file_path)
+            
+            # 2. Открываем изображение
+            img = Image.open(io.BytesIO(file_bytes.getvalue() if hasattr(file_bytes, 'getvalue') else file_bytes)).convert("RGBA")
+            w, h = img.size
+            cx, cy = w // 2, h // 2
+            
+            # 3. Зумим прицел (круглый зум)
+            crop_size = 300
+            zoom_factor = 2.0
+            
+            crop = img.crop((cx - crop_size//2, cy - crop_size//2, cx + crop_size//2, cy + crop_size//2))
+            new_size = int(crop_size * zoom_factor)
+            zoomed = crop.resize((new_size, new_size), Image.Resampling.LANCZOS)
+            
+            mask = Image.new("L", (new_size, new_size), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.ellipse((0, 0, new_size, new_size), fill=255)
+            zoomed.putalpha(mask)
+            
+            img.paste(zoomed, (cx - new_size//2, cy - new_size//2), zoomed)
+            
+            # 4. Сохраняем в буфер
+            output = io.BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            
+            # 5. Загружаем обратно в Telegram
+            msg = await message.answer_photo(photo=output, caption=f"🎯 Раскидка #{throw_id}: {title[:30]}...")
+            new_file_id = msg.photo[-1].file_id
+            
+            # 6. Обновляем БД
+            await conn.execute("UPDATE throws SET photo_aim = ? WHERE id = ?", (new_file_id, throw_id))
+            await conn.commit()
+            updated += 1
+            
+            # Удаляем тестовое сообщение с фото
+            await msg.delete()
+            
+            # Обновляем статус
+            if i % 10 == 0 or i == total:
+                await status_msg.edit_text(f"🔄 Обработано {i}/{total} фото...")
+                
+        except Exception as e:
+            errors += 1
+            print(f"Ошибка при обработке раскидки #{throw_id}: {e}")
+    
+    await conn.close()
+    
+    # Финальный результат
+    result_text = (
+        f"✅ <b>Обработка завершена!</b>\n\n"
+        f"📊 Всего фото: {total}\n"
+        f"✅ Обновлено: {updated}\n"
+        f"❌ Ошибок: {errors}\n"
+    )
+    await status_msg.edit_text(result_text, parse_mode="HTML")

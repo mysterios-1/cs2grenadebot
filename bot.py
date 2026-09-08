@@ -26,11 +26,7 @@ from emojis_utils import emoji, E
 from emojis_config import CUSTOM_EMOJIS
 from keyboards import *
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
-
-from admin_handlers import admin_router, EditThrowState, ADMINS
+from admin_handlers_bot import admin_router, EditThrowState, ADMINS
 
 load_dotenv()
 

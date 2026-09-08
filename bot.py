@@ -26,7 +26,7 @@ from emojis_utils import emoji, E
 from emojis_config import CUSTOM_EMOJIS
 from keyboards import *
 
-from admin_module import admin_router, EditThrowState, ADMINS
+from admin import admin_router, EditThrowState, ADMINS
 
 load_dotenv()
 

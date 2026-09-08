@@ -1,4 +1,3 @@
-
 import asyncio
 from datetime import datetime
 from aiogram import Router, F
@@ -7,7 +6,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import aiosqlite
-import bot
 import database as db
 import keyboards as kb
 from aiogram.filters import Command, CommandStart
@@ -469,6 +467,9 @@ async def list_users(message: Message):
 @admin_router.message(Command("focus"))
 async def focus_all_aims(message: Message):
     """Зумит прицелы всех раскидок прямо в боте"""
+    # Локальный импорт db, чтобы избежать Circular Import при запуске
+    # ЗАМЕНИТЕ 'main' на имя вашего файла, откуда вы берете db (например: from config import db)
+    
     if message.from_user.id not in ADMINS:
         await message.answer("❌ Нет прав")
         return
@@ -494,9 +495,9 @@ async def focus_all_aims(message: Message):
     
     for i, (throw_id, title, old_file_id) in enumerate(rows, 1):
         try:
-            # 1. Скачиваем фото
-            file = await bot.get_file(old_file_id)
-            file_bytes = await bot.download_file(file.file_path)
+            # 1. Скачиваем фото через message.bot (без глобального импорта bot)
+            file = await message.bot.get_file(old_file_id)
+            file_bytes = await message.bot.download_file(file.file_path)
             
             # 2. Открываем изображение
             img = Image.open(io.BytesIO(file_bytes.getvalue() if hasattr(file_bytes, 'getvalue') else file_bytes)).convert("RGBA")

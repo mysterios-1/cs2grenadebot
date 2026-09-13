@@ -463,3 +463,61 @@ async def list_users(message: Message):
     if text:
         await message.answer(text, parse_mode="HTML")
 
+@admin_router.message(Command("adddays"))
+async def add_days_command(message: Message):
+    """Добавить дни пользователю вручную.
+    Использование: /adddays USER_ID DAYS
+    Пример: /adddays 2129614624 7
+    """
+    if message.from_user.id not in ADMINS:
+        return
+    
+    parts = message.text.split()
+    
+    if len(parts) != 3:
+        await message.answer(
+            "❌ <b>Неверный формат</b>\n\n"
+            "Используйте: <code>/adddays USER_ID DAYS</code>\n\n"
+            "Пример: <code>/adddays 2129614624 7</code>",
+            parse_mode="HTML"
+        )
+        return
+    
+    try:
+        user_id = int(parts[1])
+        days = int(parts[2])
+    except ValueError:
+        await message.answer("❌ USER_ID и DAYS должны быть числами.")
+        return
+    
+    if days <= 0:
+        await message.answer("❌ DAYS должно быть больше 0.")
+        return
+    
+    # Проверяем, есть ли пользователь в БД
+    user_info = await db.get_user_info(user_id)
+    
+    if not user_info:
+        await message.answer(f"❌ Пользователь <code>{user_id}</code> не найден в БД.", parse_mode="HTML")
+        return
+    
+    # Добавляем дни
+    new_until = await db.add_days(user_id, days)
+    
+    await message.answer(
+        f"✅ <b>Готово!</b>\n\n"
+        f"👤 Пользователь: <code>{user_id}</code>\n"
+        f"📅 Добавлено дней: <b>{days}</b>\n"
+        f"🗓️ Новая дата: <b>{new_until.strftime('%d.%m.%Y %H:%M')}</b>",
+        parse_mode="HTML"
+    )
+    
+    # Уведомляем пользователя
+    try:
+        await message.bot.send_message(
+            user_id,
+            f"🎁 <b>Вам добавлено {days} дней доступа!</b>\n\n"
+            f"🗓️ Подписка активна до: <b>{new_until.strftime('%d.%m.%Y %H:%M')}</b>"
+        )
+    except Exception as e:
+        print(f"Не удалось уведомить пользователя {user_id}: {e}")

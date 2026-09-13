@@ -1008,7 +1008,7 @@ async def select_package(callback: CallbackQuery):
     package_name, price, days = packages[callback.data]
 
     await callback.answer(
-        f"Вы выбрали: {package_name} — {price} ₽",
+        f"Платежная система в разработке, чтобы пополнить дни пишите - @syntax322",
         show_alert=True
     )
 

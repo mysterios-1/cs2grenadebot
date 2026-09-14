@@ -664,8 +664,10 @@ async def view_throw_page_one(callback: CallbackQuery):
         f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n\n"
         f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>"
     )
+
+    is_fav = await is_favorite(callback.from_user.id, throw_id)
     
-    markup = get_combo_page_kb(throw_id, "pos", combo_list, user_id=callback.from_user.id, admin_id=YOUR_ADMIN_ID)
+    markup = get_combo_page_kb(throw_id, "pos", combo_list, user_id=callback.from_user.id, admin_id=YOUR_ADMIN_ID, is_fav=is_fav)
     
     for row in markup.inline_keyboard:
         for btn in row:
@@ -747,12 +749,16 @@ async def switch_pages(callback: CallbackQuery):
     else:
         return
 
+    is_fav = await is_favorite(callback.from_user.id, throw_id)
+
     markup = get_combo_page_kb(
         throw_id,
         view_type,
         combo_list,
         user_id=callback.from_user.id,
         admin_id=YOUR_ADMIN_ID,
+        is_fav=is_fav
+
     )
 
     for row in markup.inline_keyboard:
@@ -1098,6 +1104,131 @@ async def back_to_list(callback: CallbackQuery):
         reply_markup=get_maps_keyboard()
     )
     await callback.answer()
+
+# ==================== ИЗБРАННОЕ ====================
+
+@dp.callback_query(F.data == "show_favorites")
+async def show_favorites(callback: CallbackQuery):
+    if not await check_access(callback.from_user.id):
+        await callback.answer("Доступ ограничен.", show_alert=True)
+        return
+    
+    await callback.answer()
+    user_id = callback.from_user.id
+    
+    LIMIT = 6
+    favorites = await get_favorites(user_id, limit=LIMIT, offset=0)
+    total_count = await get_favorites_count(user_id)
+    
+    if not favorites:
+        await callback.message.edit_caption(
+            caption="⭐ <b>Избранное</b>\n\nУ вас пока нет сохранённых раскидок.\n\n"
+                    "Добавляйте их при просмотре раскидки — нажмите <b>⭐ В избранное</b>.",
+            reply_markup=get_back_button(),
+            parse_mode="HTML"
+        )
+        return
+    
+    text = f"⭐ <b>Избранные раскидки</b>\n\nВсего: <b>{total_count}</b>"
+    
+    await callback.message.edit_caption(
+        caption=text,
+        reply_markup=get_favorites_menu(favorites, page=1, total_count=total_count, limit=LIMIT),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("favpage_"))
+async def favorites_pagination(callback: CallbackQuery):
+    if not await check_access(callback.from_user.id):
+        await callback.answer("Доступ ограничен.", show_alert=True)
+        return
+    
+    await callback.answer()
+    user_id = callback.from_user.id
+    page = int(callback.data.split("_")[1])
+    
+    LIMIT = 6
+    offset = (page - 1) * LIMIT
+    
+    favorites = await get_favorites(user_id, limit=LIMIT, offset=offset)
+    total_count = await get_favorites_count(user_id)
+    
+    text = f"⭐ <b>Избранные раскидки</b>\n\nВсего: <b>{total_count}</b>"
+    
+    await callback.message.edit_caption(
+        caption=text,
+        reply_markup=get_favorites_menu(favorites, page=page, total_count=total_count, limit=LIMIT),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("fav_add_"))
+async def add_to_favorites(callback: CallbackQuery):
+    throw_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    
+    await add_favorite(user_id, throw_id)
+    await callback.answer("⭐ Добавлено в избранное!")
+    
+    # Обновляем клавиатуру — заменяем кнопку
+    throw = await get_throw_detail(throw_id)
+    if not throw:
+        return
+    
+    _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
+    combo_list = await get_combo_throws(combo_id) if combo_id else []
+    
+    # Собираем клавиатуру заново
+    markup = get_combo_page_kb(
+        throw_id, "pos", combo_list,
+        user_id=callback.from_user.id,
+        admin_id=YOUR_ADMIN_ID,
+        is_fav=True  # ← добавляем параметр
+    )
+    
+    for row in markup.inline_keyboard:
+        for btn in row:
+            if btn.callback_data == "back_to_list_placeholder":
+                btn.callback_data = f"{g_type}_{map_name}"
+    
+    try:
+        await callback.message.edit_reply_markup(reply_markup=markup)
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("fav_remove_"))
+async def remove_from_favorites(callback: CallbackQuery):
+    throw_id = int(callback.data.split("_")[-1])
+    user_id = callback.from_user.id
+    
+    await remove_favorite(user_id, throw_id)
+    await callback.answer("★ Убрано из избранного")
+    
+    throw = await get_throw_detail(throw_id)
+    if not throw:
+        return
+    
+    _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
+    combo_list = await get_combo_throws(combo_id) if combo_id else []
+    
+    markup = get_combo_page_kb(
+        throw_id, "pos", combo_list,
+        user_id=callback.from_user.id,
+        admin_id=YOUR_ADMIN_ID,
+        is_fav=False
+    )
+    
+    for row in markup.inline_keyboard:
+        for btn in row:
+            if btn.callback_data == "back_to_list_placeholder":
+                btn.callback_data = f"{g_type}_{map_name}"
+    
+    try:
+        await callback.message.edit_reply_markup(reply_markup=markup)
+    except Exception:
+        pass
 
 # ==================== ЗАПУСК БОТА ====================
 

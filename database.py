@@ -6,7 +6,16 @@ from datetime import datetime, timedelta
 
 import os
 
-DB_PATH = "/data/smoke_bot.db"  # Абсолютный путь!
+if os.path.exists("/data"):
+    # На сервере Amvera
+    DB_PATH = "/data/smoke_bot.db"
+else:
+    # На локальном ПК
+    DB_PATH = os.path.join(os.path.dirname(__file__), "data", "smoke_bot.db")
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+print(f"[DB] Путь к БД: {DB_PATH}")
+
 
 async def init_db():
     """Единая функция инициализации всех таблиц базы данных"""
@@ -57,6 +66,17 @@ async def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT UNIQUE,
             file_id TEXT
+        )''')
+        await db.commit()
+
+
+        # 5. Избранное
+        await db.execute('''CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            throw_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, throw_id)
         )''')
         await db.commit()
         
@@ -429,7 +449,72 @@ async def mark_expiry_notice_sent(user_id):
             "UPDATE users SET expiry_notice_sent = 1 WHERE user_id = ?",
             (user_id,)
         )
+
         await db.commit()
+
+# ==================== ИЗБРАННОЕ ====================
+
+async def add_favorite(user_id: int, throw_id: int) -> bool:
+    """Добавить раскидку в избранное"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        try:
+            await db.execute(
+                "INSERT OR IGNORE INTO favorites (user_id, throw_id) VALUES (?, ?)",
+                (user_id, throw_id)
+            )
+            await db.commit()
+            return True
+        except Exception as e:
+            print(f"Ошибка добавления в избранное: {e}")
+            return False
+
+
+async def remove_favorite(user_id: int, throw_id: int) -> bool:
+    """Удалить раскидку из избранного"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM favorites WHERE user_id = ? AND throw_id = ?",
+            (user_id, throw_id)
+        )
+        await db.commit()
+        return True
+
+
+async def is_favorite(user_id: int, throw_id: int) -> bool:
+    """Проверить, есть ли раскидка в избранном"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM favorites WHERE user_id = ? AND throw_id = ?",
+            (user_id, throw_id)
+        )
+        return await cursor.fetchone() is not None
+
+
+async def get_favorites(user_id: int, limit: int = 6, offset: int = 0):
+    """Получить избранные раскидки пользователя (с пагинацией)"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            SELECT t.id, t.title, t.map_name, t.grenade_type
+            FROM favorites f
+            JOIN throws t ON f.throw_id = t.id
+            WHERE f.user_id = ?
+            ORDER BY f.created_at DESC
+            LIMIT ? OFFSET ?
+        """, (user_id, limit, offset))
+        return await cursor.fetchall()
+
+
+async def get_favorites_count(user_id: int) -> int:
+    """Получить количество избранных раскидок"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM favorites WHERE user_id = ?",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
 
 
 

@@ -46,6 +46,8 @@ EMOJI_FALLBACK = {
     "week": "🫵",
     "month": "😁",
     "year": "🫤",
+    "favorites": "🫳",
+    "favorites2": "😬"
 }
 
 def emoji(emoji_key: str) -> str:

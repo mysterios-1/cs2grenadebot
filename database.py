@@ -514,6 +514,46 @@ async def get_favorites_count(user_id: int) -> int:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+async def get_favorite_maps(user_id: int) -> list:
+    """Возвращает список карт, у которых есть избранные раскидки"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            SELECT DISTINCT t.map_name
+            FROM favorites f
+            JOIN throws t ON f.throw_id = t.id
+            WHERE f.user_id = ?
+        """, (user_id,))
+        return [row[0] for row in await cursor.fetchall()]
+
+
+async def get_favorites_by_map(user_id: int, map_name: str, limit: int = 6, offset: int = 0):
+    """Избранные раскидки пользователя для конкретной карты"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            SELECT t.id, t.title
+            FROM favorites f
+            JOIN throws t ON f.throw_id = t.id
+            WHERE f.user_id = ? AND t.map_name = ?
+            ORDER BY f.created_at DESC
+            LIMIT ? OFFSET ?
+        """, (user_id, map_name, limit, offset))
+        return await cursor.fetchall()
+
+
+async def get_favorites_count_by_map(user_id: int, map_name: str) -> int:
+    """Количество избранных раскидок на карте"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("""
+            SELECT COUNT(*)
+            FROM favorites f
+            JOIN throws t ON f.throw_id = t.id
+            WHERE f.user_id = ? AND t.map_name = ?
+        """, (user_id, map_name))
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
+
 
 
 

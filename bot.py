@@ -629,34 +629,23 @@ async def list_pagination(callback: CallbackQuery):
 
 YOUR_ADMIN_ID = 2129614624
 
-@dp.callback_query(F.data.startswith("view_"))
-async def view_throw_page_one(callback: CallbackQuery):
-    throw_id = int(callback.data.split("_")[-1])
-
-    # 1. Запускаем проверку доступа и получение деталей раскидки параллельно
-    has_access, throw = await asyncio.gather(
-        check_access(callback.from_user.id),
-        get_throw_detail(throw_id)
-    )
-
-    if not has_access:
+@dp.callback_query(F.data.startswith("view_fav_"))
+async def view_favorite_throw(callback: CallbackQuery):
+    print("!!! ХЭНДЛЕР ИЗБРАННОГО СРАБОТАЛ !!!")  # <-- ДОБАВЬ ЭТО СЮДА
+    await callback.answer()
+    
+    if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
-
-    if not throw:
-        await callback.answer(f"{emoji('cross')} Раскидка не найдена.", show_alert=True)
-        return
-        
-    if len(throw) < 12:
-        await callback.answer(f"{emoji('cross')} Ошибка данных раскидки.", show_alert=True)
-        return
-
-    # 2. Данные на месте — моментально гасим анимацию загрузки кнопки в Telegram
-    await callback.answer()
-        
-    _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
     
-    # 3. Быстро запрашиваем комбо-раскидки, если они привязаны
+    throw_id = int(callback.data.split("_")[-1])
+    throw = await get_throw_detail(throw_id)
+    
+    if not throw or len(throw) < 12:
+        await callback.answer("Раскидка не найдена.", show_alert=True)
+        return
+    
+    _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
     combo_list = await get_combo_throws(combo_id) if combo_id else []
     
     caption = (
@@ -664,115 +653,157 @@ async def view_throw_page_one(callback: CallbackQuery):
         f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n\n"
         f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>"
     )
-
+    
     is_fav = await is_favorite(callback.from_user.id, throw_id)
     
-    markup = get_combo_page_kb(throw_id, "pos", combo_list, user_id=callback.from_user.id, admin_id=YOUR_ADMIN_ID, is_fav=is_fav)
+    # Теперь клавиатура четко понимает source="fav" и для одиночных, и для комбо!
+    markup = get_combo_page_kb(
+        throw_id, "pos", combo_list,
+        user_id=callback.from_user.id,
+        admin_id=YOUR_ADMIN_ID,
+        is_fav=is_fav,
+        source="fav"
+    )
     
+    # Логика автозамены колбэка
     for row in markup.inline_keyboard:
         for btn in row:
-            if btn.callback_data == "back_to_list_placeholder":
-                btn.callback_data = f"{g_type}_{map_name}"
-
-    # 4. Обновляем интерфейс
+            if btn.callback_data == "back_to_list_placeholder_fav":
+                btn.callback_data = f"favmap_{map_name}_1"
+    
     try:
-        # Пытаемся отправить как новое фото
-        await callback.message.answer_photo(photo=photo_pos, caption=caption, parse_mode="HTML", reply_markup=markup)
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+        await callback.message.delete()
     except Exception:
-        # Если отправка фото не удалась, редактируем текущее медиа
-        media = InputMediaPhoto(media=photo_pos, caption=caption, parse_mode="HTML")
-        await callback.message.edit_media(media=media, reply_markup=markup)
-
-@dp.callback_query(F.data.startswith("page_"))
-async def switch_pages(callback: CallbackQuery):
-    parts = callback.data.split("_")
-    if len(parts) != 3:
-        await callback.answer("Ошибка данных.", show_alert=True)
-        return
-
-    throw_id = int(parts[1])
-    page = int(parts[2])
-
-    # 1. Запускаем параллельно проверку прав и извлечение информации по раскидке
-    has_access, throw = await asyncio.gather(
-        check_access(callback.from_user.id),
-        get_throw_detail(throw_id)
+        pass
+    
+    await callback.message.answer_photo(
+        photo=photo_pos,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=markup
     )
 
-    if not has_access:
+@dp.callback_query(F.data.startswith("view_"))
+async def view_throw_page_one(callback: CallbackQuery):
+    await callback.answer()
+    
+    if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
-
+    
+    throw_id = int(callback.data.split("_")[-1])
+    throw = await get_throw_detail(throw_id)
+    
     if not throw or len(throw) < 12:
         await callback.answer("Раскидка не найдена.", show_alert=True)
         return
-
-    # 2. Доступ подтвержден, раскидка найдена — СРАЗУ гасим часики загрузки
-    await callback.answer()
-
-    (
-        id_, map_name, g_type, title, photo_pos, photo_aim, photo_result,
-        desc, throw_type, zone, side, combo_id
-    ) = throw[:12]
-
-    # 3. Быстро запрашиваем список комбинаций
+    
+    _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
     combo_list = await get_combo_throws(combo_id) if combo_id else []
+    
+    caption = (
+        f"{emoji('geo')} <b>{title}</b> (ПОЗИЦИЯ)\n\n"
+        f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n\n"
+        f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>"
+    )
+    
+    is_fav = await is_favorite(callback.from_user.id, throw_id)
+    
+    markup = get_combo_page_kb(
+        throw_id, "pos", combo_list,
+        user_id=callback.from_user.id,
+        admin_id=YOUR_ADMIN_ID,
+        is_fav=is_fav,
+        source="list"
+    )
+    
+    for row in markup.inline_keyboard:
+        for btn in row:
+            if btn.callback_data == "back_to_list_placeholder_list":
+                btn.callback_data = f"{g_type}_{map_name}"
+    
+    # ← Сначала удаляем, потом отправляем
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    await callback.message.answer_photo(
+        photo=photo_pos,
+        caption=caption,
+        parse_mode="HTML",
+        reply_markup=markup
+    )
 
-    # Определяем медиафайл и текст в зависимости от выбранной вкладки (страницы)
+@dp.callback_query(F.data.startswith("page_"))
+async def switch_pages(callback: CallbackQuery):
+    await callback.answer()
+    
+    parts = callback.data.split("_")
+    # page_{id}_{page}_{source}
+    if len(parts) < 4:
+        await callback.answer("Ошибка данных.", show_alert=True)
+        return
+    
+    throw_id = int(parts[1])
+    page = int(parts[2])
+    source = parts[3]
+    
+    if not await check_access(callback.from_user.id):
+        await callback.answer("Доступ ограничен.", show_alert=True)
+        return
+    
+    throw = await get_throw_detail(throw_id)
+    if not throw or len(throw) < 12:
+        await callback.answer("Раскидка не найдена.", show_alert=True)
+        return
+    
+    (id_, map_name, g_type, title, photo_pos, photo_aim, photo_result,
+     desc, throw_type, zone, side, combo_id) = throw[:12]
+    
+    combo_list = await get_combo_throws(combo_id) if combo_id else []
+    
     if page == 1:
         photo = photo_pos
         view_type = "pos"
-        caption = (
-            f"{emoji('geo')} <b>{title}</b> (ПОЗИЦИЯ)\n\n"
-            f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n"
-            f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>"
-        )
+        caption = (f"{emoji('geo')} <b>{title}</b> (ПОЗИЦИЯ)\n\n"
+                   f"{emoji('grenade_position')} <b>Где стоять:</b> {desc}\n"
+                   f"{emoji('grenade_jumptype')} <b>Тип броска:</b> <code>{throw_type}</code>")
     elif page == 2:
         photo = photo_aim
         view_type = "aim"
-        caption = (
-            f"{emoji('target')} <b>{title}</b> (ПРИЦЕЛ)\n\n"
-            "Повторите наводку прицела по изображению.\n"
-            f"{emoji('grenade_jumptype')} <b>Бросок:</b> <code>{throw_type}</code>"
-        )
+        caption = (f"{emoji('target')} <b>{title}</b> (ПРИЦЕЛ)\n\n"
+                   f"Повторите наводку прицела по изображению.\n"
+                   f"{emoji('grenade_jumptype')} <b>Бросок:</b> <code>{throw_type}</code>")
     elif page == 3:
         photo = photo_result or photo_aim
         view_type = "result"
-        caption = (
-            f"{emoji('where_it_explodes')} <b>{title}</b> (РЕЗУЛЬТАТ)\n\n"
-            "Граната успешно раскрывается и закрывает обзор противнику."
-        )
+        caption = (f"{emoji('where_it_explodes')} <b>{title}</b> (РЕЗУЛЬТАТ)\n\n"
+                   f"Граната успешно раскрывается и закрывает обзор противнику.")
     else:
         return
-
+    
     is_fav = await is_favorite(callback.from_user.id, throw_id)
-
+    
     markup = get_combo_page_kb(
-        throw_id,
-        view_type,
-        combo_list,
+        throw_id, view_type, combo_list,
         user_id=callback.from_user.id,
         admin_id=YOUR_ADMIN_ID,
-        is_fav=is_fav
-
+        is_fav=is_fav,
+        source=source
     )
-
+    
+    # ← Меняем "К списку"
     for row in markup.inline_keyboard:
         for button in row:
-            if button.callback_data == "back_to_list_placeholder":
-                button.callback_data = f"{g_type}_{map_name}"
-
-    media = InputMediaPhoto(
-        media=photo,
-        caption=caption,
-        parse_mode="HTML",
-    )
-
-    # 4. Перерисовываем медиавкладку
+            if button.callback_data == f"back_to_list_placeholder_{source}":
+                if source == "fav":
+                    button.callback_data = f"favmap_{map_name}_1"
+                else:
+                    button.callback_data = f"{g_type}_{map_name}"
+    
+    # ← Используем edit_media (не удаляем!)
+    media = InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML")
     await callback.message.edit_media(media=media, reply_markup=markup)
 
 
@@ -1088,55 +1119,109 @@ async def expiry_notifications_worker():
 
 # ==================== ВОЗВРАТ К СПИСКУ РАСКИДОК ====================
 
-@dp.callback_query(F.data == "back_to_list_placeholder")
+@dp.callback_query(F.data.startswith("back_to_list_placeholder"))
 async def back_to_list(callback: CallbackQuery):
-    """Возврат к списку раскидок"""
+    """Универсальный и безопасный возврат в списки без ошибок Pydantic"""
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
-    # Пытаемся получить текущее сообщение и вернуться в меню карт
-    # Просто отправляем пользователя в главное меню карт
-    map_icon = emoji("map_icon")
-    await callback.message.edit_caption(
-        caption=f"{map_icon} <b>Выберите карту:</b>\n\n"
-                "Доступные карты для тренировки гранат:",
-        reply_markup=get_maps_keyboard()
-    )
+    # Дефолтные настройки на случай непредвиденных ситуаций
+    map_name = "mirage"
+    g_type = "smoke"
+    zone = "a"
+    side = "t"
+    throw_id = None
+
+    # 1. Вытаскиваем ID текущей раскидки из инлайн-кнопок на экране
+    if callback.message.reply_markup:
+        for row in callback.message.reply_markup.inline_keyboard:
+            for btn in row:
+                if "page_" in str(btn.callback_data):
+                    try:
+                        # Разбираем callback пагинации (например, page_284_2_list или page_284_2_fav)
+                        throw_id = int(btn.callback_data.split("_")[1])
+                        break
+                    except Exception:
+                        pass
+            if throw_id:
+                break
+
+    # 2. Если нашли ID, запрашиваем данные из БД, чтобы узнать точную карту и тип гранаты
+    if throw_id:
+        throw = await get_throw_detail(throw_id)
+        if throw and len(throw) >= 11:
+            # Соответствие полям таблицы throws:
+            # 1: map_name, 2: grenade_type, 9: zone, 10: side
+            map_name = throw[1]
+            g_type = throw[2]
+            zone = throw[9] if throw[9] else "a"
+            side = throw[10] if throw[10] else "t"
+
+    # Корректируем зону для инста-раскидок и ванвеев, как это заложено в твоем меню
+    if g_type in ["insta", "oneway"]:
+        zone = "all"
+
+    # === СЦЕНАРИЙ 1: ЕСЛИ КЛИКНУЛИ ИЗ ИЗБРАННОГО ===
+    if callback.data.endswith("_fav"):
+        # Создаем безопасную копию колбэка с новыми данными для пагинации избранного
+        cloned_callback = callback.model_copy(update={'data': f"favmap_{map_name}_1"})
+        await show_favorites_by_map(cloned_callback)
+        return
+
+    # === СЦЕНАРИЙ 2: ЕСЛИ КЛИКНУЛИ ИЗ ОБЫЧНЫХ РАСКИДОК ===
     await callback.answer()
+    
+    # Полностью удаляем старое сообщение со скриншотом позиции раскидки
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    # Генерируем точный callback_data, имитирующий открытие 1-й страницы списка гранат этой категории.
+    # Шаблон из твоего меню: listpage_map_type_zone_side_page
+    target_callback_data = f"listpage_{map_name}_{g_type}_{zone}_{side}_1"
+    
+    # Клонируем callback_query с новым сигналом, обходя защиту frozen_instance от Pydantic
+    cloned_callback = callback.model_copy(update={'data': target_callback_data})
+    
+    # Скармливаем этот сигнал обратно в диспетчер aiogram. 
+    # Он сам найдет хэндлер, отвечающий за вывод списка гранат (который ловит listpage_), 
+    # автоматически вызовет функцию get_throws_list_menu и отобразит меню!
+    try:
+        await dp.feed_update(callback.bot, cloned_callback.update)
+    except Exception as e:
+        print(f"Ошибка перенаправления в меню гранат: {e}")
+
+
+
 
 # ==================== ИЗБРАННОЕ ====================
 
 @dp.callback_query(F.data == "show_favorites")
 async def show_favorites(callback: CallbackQuery):
+    await callback.answer()
+    
     if not await check_access(callback.from_user.id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
     
-    await callback.answer()
-    user_id = callback.from_user.id
+    # Заменено на твой эмодзи
+    text = f"{emoji('favorites')} <b>Избранное</b>\n\nВыберите карту:"
+    markup = get_favorites_maps_menu()
+    photo = await get_bot_photo("main_menu")
     
-    LIMIT = 6
-    favorites = await get_favorites(user_id, limit=LIMIT, offset=0)
-    total_count = await get_favorites_count(user_id)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     
-    if not favorites:
-        await callback.message.edit_caption(
-            caption="⭐ <b>Избранное</b>\n\nУ вас пока нет сохранённых раскидок.\n\n"
-                    "Добавляйте их при просмотре раскидки — нажмите <b>⭐ В избранное</b>.",
-            reply_markup=get_back_button(),
-            parse_mode="HTML"
+    if photo:
+        await callback.message.answer_photo(
+            photo=photo, caption=text, reply_markup=markup, parse_mode="HTML"
         )
-        return
-    
-    text = f"⭐ <b>Избранные раскидки</b>\n\nВсего: <b>{total_count}</b>"
-    
-    await callback.message.edit_caption(
-        caption=text,
-        reply_markup=get_favorites_menu(favorites, page=1, total_count=total_count, limit=LIMIT),
-        parse_mode="HTML"
-    )
-
+    else:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 @dp.callback_query(F.data.startswith("favpage_"))
 async def favorites_pagination(callback: CallbackQuery):
@@ -1154,7 +1239,8 @@ async def favorites_pagination(callback: CallbackQuery):
     favorites = await get_favorites(user_id, limit=LIMIT, offset=offset)
     total_count = await get_favorites_count(user_id)
     
-    text = f"⭐ <b>Избранные раскидки</b>\n\nВсего: <b>{total_count}</b>"
+    # Заменено на твой эмодзи
+    text = f"{emoji('favorites')} <b>Избранные раскидки</b>\n\nВсего: <b>{total_count}</b>"
     
     await callback.message.edit_caption(
         caption=text,
@@ -1165,13 +1251,16 @@ async def favorites_pagination(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("fav_add_"))
 async def add_to_favorites(callback: CallbackQuery):
-    throw_id = int(callback.data.split("_")[-1])
+    parts = callback.data.split("_")
+    throw_id = int(parts[2])
+    source = parts[3] if len(parts) > 3 else "list"
     user_id = callback.from_user.id
     
     await add_favorite(user_id, throw_id)
-    await callback.answer("⭐ Добавлено в избранное!")
     
-    # Обновляем клавиатуру — заменяем кнопку
+    # 🔥 ИСПРАВЛЕНИЕ ДЛЯ TOAST: используем обычный смайлик, чтобы серая рамка была чистой!
+    await callback.answer("Добавлено в избранное!")
+    
     throw = await get_throw_detail(throw_id)
     if not throw:
         return
@@ -1179,18 +1268,16 @@ async def add_to_favorites(callback: CallbackQuery):
     _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
     combo_list = await get_combo_throws(combo_id) if combo_id else []
     
-    # Собираем клавиатуру заново
+    # Генерируем клавиатуру — она сама создаст кнопку "Убрать" с премиум-эмодзи и правильный возврат!
     markup = get_combo_page_kb(
-        throw_id, "pos", combo_list,
+        throw_id=throw_id,
+        current_view="pos",
+        combo_list=combo_list,
         user_id=callback.from_user.id,
         admin_id=YOUR_ADMIN_ID,
-        is_fav=True  # ← добавляем параметр
+        is_fav=True,
+        source=source
     )
-    
-    for row in markup.inline_keyboard:
-        for btn in row:
-            if btn.callback_data == "back_to_list_placeholder":
-                btn.callback_data = f"{g_type}_{map_name}"
     
     try:
         await callback.message.edit_reply_markup(reply_markup=markup)
@@ -1200,11 +1287,15 @@ async def add_to_favorites(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("fav_remove_"))
 async def remove_from_favorites(callback: CallbackQuery):
-    throw_id = int(callback.data.split("_")[-1])
+    parts = callback.data.split("_")
+    throw_id = int(parts[2])
+    source = parts[3] if len(parts) > 3 else "list"
     user_id = callback.from_user.id
     
     await remove_favorite(user_id, throw_id)
-    await callback.answer("★ Убрано из избранного")
+    
+    # 🔥 ИСПРАВЛЕНИЕ ДЛЯ TOAST: обычный смайлик для всплывающего уведомления
+    await callback.answer("Убрано из избранного")
     
     throw = await get_throw_detail(throw_id)
     if not throw:
@@ -1213,22 +1304,68 @@ async def remove_from_favorites(callback: CallbackQuery):
     _, map_name, g_type, title, photo_pos, photo_aim, photo_result, desc, throw_type, zone, side, combo_id = throw[:12]
     combo_list = await get_combo_throws(combo_id) if combo_id else []
     
+    # Генерируем клавиатуру — она сама вернет кнопку "В избранное" с премиум-эмодзи
     markup = get_combo_page_kb(
-        throw_id, "pos", combo_list,
+        throw_id=throw_id,
+        current_view="pos",
+        combo_list=combo_list,
         user_id=callback.from_user.id,
         admin_id=YOUR_ADMIN_ID,
-        is_fav=False
+        is_fav=False,
+        source=source
     )
-    
-    for row in markup.inline_keyboard:
-        for btn in row:
-            if btn.callback_data == "back_to_list_placeholder":
-                btn.callback_data = f"{g_type}_{map_name}"
     
     try:
         await callback.message.edit_reply_markup(reply_markup=markup)
     except Exception:
         pass
+
+@dp.callback_query(F.data.startswith("favmap_"))
+async def show_favorites_by_map(callback: CallbackQuery):
+    await callback.answer()
+    
+    if not await check_access(callback.from_user.id):
+        await callback.answer("Доступ ограничен.", show_alert=True)
+        return
+    
+    user_id = callback.from_user.id
+    parts = callback.data.split("_")
+    map_name = parts[1]
+    page = int(parts[2]) if len(parts) > 2 else 1
+    
+    LIMIT = 6
+    offset = (page - 1) * LIMIT
+    
+    favorites = await get_favorites_by_map(user_id, map_name, limit=LIMIT, offset=offset)
+    total_count = await get_favorites_count_by_map(user_id, map_name)
+    
+    map_names = {
+        "mirage": "Mirage", "dust2": "Dust II", "inferno": "Inferno",
+        "nuke": "Nuke", "anubis": "Anubis", "ancient": "Ancient"
+    }
+    display_name = map_names.get(map_name, map_name.capitalize())
+    
+    # Заменено на твой эмодзи во всех вариациях текстов
+    if not favorites:
+        text = f"{emoji('favorites')} <b>Избранное — {display_name}</b>\n\nНа этой карте пока нет сохранённых раскидок."
+        markup = get_favorites_by_map_menu([], map_name, 1, 0, LIMIT)
+    else:
+        text = f"{emoji('favorites')} <b>Избранное — {display_name}</b>\n\nВсего: <b>{total_count}</b>"
+        markup = get_favorites_by_map_menu(favorites, map_name, page, total_count, LIMIT)
+    
+    photo = await get_bot_photo("main_menu")
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    if photo:
+        await callback.message.answer_photo(
+            photo=photo, caption=text, reply_markup=markup, parse_mode="HTML"
+        )
+    else:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 # ==================== ЗАПУСК БОТА ====================
 

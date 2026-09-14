@@ -25,7 +25,7 @@ def get_main_menu(has_access: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(create_btn("map_icon", "Карты", callback_data="show_maps"))
-    builder.row(create_btn("secure", "Избранное", callback_data="show_favorites"))
+    builder.row(create_btn("favorites2", "Избранное", callback_data="show_favorites"))
     builder.row(create_btn("profile", "Личный кабинет", callback_data="profile"))
     builder.row(create_btn("referral", "Пригласить друга", callback_data="referral"))
     builder.row(create_btn("support", "Поддержка", callback_data="support"))
@@ -133,22 +133,28 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
     total_pages = (total_count + limit - 1) // limit
     if total_pages == 0: total_pages = 1
 
+        # Пагинация — только Назад/Далее (как в избранном)
+    total_pages = (total_count + limit - 1) // limit
+    if total_pages < 1:
+        total_pages = 1
+
     nav_row = []
-    cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
     if page > 1:
-        nav_row.append(create_btn("left", "Пред.", callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"))
-    
-    nav_row.append(create_btn("info", f"{page}/{total_pages}", callback_data="noop"))
-    
+        nav_row.append(InlineKeyboardButton(
+            text="Назад",
+            callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"
+        ))
     if page < total_pages:
-        nav_row.append(create_btn("right", "След.", callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"))
-        
-    if len(nav_row) > 1 or (nav_row and nav_row[0].callback_data != "noop"):
+        nav_row.append(InlineKeyboardButton(
+            text="Далее",
+            callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"
+        ))
+    
+    if nav_row:
         builder.row(*nav_row)
 
     builder.row(create_btn("left", "Назад к категориям", callback_data=f"map_{map_name}"))
     return builder.as_markup()
-
 
 
 
@@ -165,38 +171,30 @@ def get_throw_page_kb(throw_id: int, page: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_combo_page_kb(
-    throw_id: int,
-    current_view: str,
-    combo_list: list = None,
-    user_id: int = 0,
-    admin_id: int = 0,
-    is_fav: bool = False  # ← НОВЫЙ ПАРАМЕТР
-) -> InlineKeyboardMarkup:
+def get_combo_page_kb(throw_id, current_view, combo_list=None, user_id=0, admin_id=0, is_fav=False, source="list"):
     builder = InlineKeyboardBuilder()
-    
     is_single = not combo_list or len(combo_list) <= 1
     
     if is_single:
         if current_view == "pos":
-            builder.row(create_btn("right", "Далее", callback_data=f"page_{throw_id}_2"))
+            builder.row(create_btn("right", "Далее", callback_data=f"page_{throw_id}_2_{source}"))
         elif current_view == "aim":
             builder.row(
-                create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1"),
-                create_btn("right", "Результат", callback_data=f"page_{throw_id}_3")
+                create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1_{source}"),
+                create_btn("right", "Результат", callback_data=f"page_{throw_id}_3_{source}")
             )
         elif current_view == "result":
-            builder.row(create_btn("left", "Назад", callback_data=f"page_{throw_id}_2"))
+            builder.row(create_btn("left", "Назад", callback_data=f"page_{throw_id}_2_{source}"))
         
-        # Кнопки: "К списку" + "⭐ В избранное" / "★ Убрать"
-        fav_btn = (
-            InlineKeyboardButton(text="★ Убрать", callback_data=f"fav_remove_{throw_id}")
-            if is_fav else
-            InlineKeyboardButton(text="⭐ В избранное", callback_data=f"fav_add_{throw_id}")
-        )
+        # Красиво создаем кнопку через твою функцию create_btn
+        if is_fav:
+            fav_btn = create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}")
+        else:
+            fav_btn = create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}")
         
+        back_text = "В избранное" if source == "fav" else "К списку"
         builder.row(
-            create_btn("left", "К списку", callback_data="back_to_list_placeholder"),
+            create_btn("left", back_text, callback_data=f"back_to_list_placeholder_{source}"),
             fav_btn
         )
         
@@ -221,35 +219,38 @@ def get_combo_page_kb(
     
     if current_view == "pos":
         first_id = combo_list[0][0]
-        buttons.append(create_btn("right", "Далее", callback_data=f"page_{first_id}_2"))
+        buttons.append(create_btn("right", "Далее", callback_data=f"page_{first_id}_2_{source}"))
         builder.row(*buttons)
     elif current_view == "aim":
         if current_index == 0:
-            buttons.append(create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1"))
+            buttons.append(create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1_{source}"))
         else:
             prev_id = combo_list[current_index - 1][0]
-            buttons.append(create_btn("left", "Назад", callback_data=f"page_{prev_id}_2"))
+            buttons.append(create_btn("left", "Назад", callback_data=f"page_{prev_id}_2_{source}"))
         
         if current_index < total - 1:
             next_id = combo_list[current_index + 1][0]
-            buttons.append(create_btn("right", "Следующая", callback_data=f"page_{next_id}_2"))
+            buttons.append(create_btn("right", "Следующая", callback_data=f"page_{next_id}_2_{source}"))
         else:
-            buttons.append(create_btn("right", "Результат", callback_data=f"page_{first_throw_id}_3"))
+            buttons.append(create_btn("right", "Результат", callback_data=f"page_{first_throw_id}_3_{source}"))
         
         builder.row(*buttons)
     elif current_view == "result":
         last_id = combo_list[-1][0]
-        buttons.append(create_btn("left", "Назад", callback_data=f"page_{last_id}_2"))
+        buttons.append(create_btn("left", "Назад", callback_data=f"page_{last_id}_2_{source}"))
         builder.row(*buttons)
     
-    fav_btn = (
-        InlineKeyboardButton(text="★ Убрать", callback_data=f"fav_remove_{throw_id}")
-        if is_fav else
-        InlineKeyboardButton(text="⭐ В избранное", callback_data=f"fav_add_{throw_id}")
-    )
+    is_current_fav = True if source == "fav" else is_fav
+
+    # Создаем комбо-кнопку через твою функцию create_btn
+    if is_current_fav:
+        fav_btn = create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}")
+    else:
+        fav_btn = create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}")
     
+    back_text = "В избранное" if source == "fav" else "К списку"
     builder.row(
-        create_btn("left", "К списку", callback_data="back_to_list_placeholder"),
+        create_btn("left", back_text, callback_data=f"back_to_list_placeholder_{source}"),
         fav_btn
     )
     
@@ -374,29 +375,80 @@ def get_admin_zones_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def get_favorites_menu(favorites_list: list, page: int, total_count: int, limit: int = 6) -> InlineKeyboardMarkup:
-    """Клавиатура для раздела 'Избранное' с пагинацией Назад/Далее"""
+    """Клавиатура для раздела 'Избранное' со списком всех раскидок и пагинацией"""
     builder = InlineKeyboardBuilder()
     
-    # Список раскидок
+    # Список раскидок — выводим как ОБЫЧНЫЕ чистые инлайн-кнопки (без кастомных эмодзи)
     for throw_id, title, map_name, grenade_type in favorites_list:
         builder.row(InlineKeyboardButton(
             text=f"{title} ({map_name})",
             callback_data=f"view_{throw_id}"
         ))
     
-    # Пагинация (только Назад/Далее, без номера страницы)
     total_pages = (total_count + limit - 1) // limit
     if total_pages < 1:
         total_pages = 1
     
     nav_row = []
     if page > 1:
-        nav_row.append(InlineKeyboardButton(text="← Назад", callback_data=f"favpage_{page-1}"))
+        nav_row.append(create_btn("left", "Назад", callback_data=f"favpage_{page-1}"))
     if page < total_pages:
-        nav_row.append(InlineKeyboardButton(text="Далее →", callback_data=f"favpage_{page+1}"))
+        nav_row.append(create_btn("right", "Далее", callback_data=f"favpage_{page+1}"))
     
     if nav_row:
         builder.row(*nav_row)
     
     builder.row(create_btn("left", "Назад в меню", callback_data="back_main"))
     return builder.as_markup()
+
+
+
+def get_favorites_by_map_menu(favorites_list: list, map_name: str, page: int, total_count: int, limit: int = 6) -> InlineKeyboardMarkup:
+    """Список избранных раскидок конкретной карты с пагинацией"""
+    builder = InlineKeyboardBuilder()
+    
+    # Выводим раскидки по карте — тоже чистым текстом, без кастомных эмодзи
+    for throw_id, title in favorites_list:
+        builder.row(InlineKeyboardButton(
+            text=title,
+            callback_data=f"view_fav_{throw_id}"
+        ))
+    
+    total_pages = (total_count + limit - 1) // limit
+    if total_pages < 1:
+        total_pages = 1
+    
+    nav_row = []
+    if page > 1:
+        nav_row.append(create_btn("left", "Назад", callback_data=f"favmap_{map_name}_{page-1}"))
+    if page < total_pages:
+        nav_row.append(create_btn("right", "Далее", callback_data=f"favmap_{map_name}_{page+1}"))
+    
+    if nav_row:
+        builder.row(*nav_row)
+    
+    builder.row(create_btn("left", "Назад к картам", callback_data="show_favorites"))
+    return builder.as_markup()
+
+def get_favorites_maps_menu() -> InlineKeyboardMarkup:
+    """Меню выбора карт для раздела Избранное (тут иконки карт через create_btn нужны)"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(
+        create_btn("mirage", "Mirage", callback_data="favmap_mirage_1"),
+        create_btn("dust2", "Dust II", callback_data="favmap_dust2_1")
+    )
+    builder.row(
+        create_btn("inferno", "Inferno", callback_data="favmap_inferno_1"),
+        create_btn("nuke", "Nuke", callback_data="favmap_nuke_1")
+    )
+    builder.row(
+        create_btn("anubis", "Anubis", callback_data="favmap_anubis_1"),
+        create_btn("ancient", "Ancient", callback_data="favmap_ancient_1")
+    )
+    builder.row(create_btn("left", "Назад", callback_data="back_main"))
+    
+    builder.adjust(2, 2, 2, 1)
+    return builder.as_markup()
+
+

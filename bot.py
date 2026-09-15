@@ -7,12 +7,13 @@ from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import InputMediaPhoto, Message, CallbackQuery, FSInputFile
+from aiogram.types import InputMediaPhoto, LabeledPrice, Message, CallbackQuery, FSInputFile
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import PreCheckoutQuery, LabeledPrice, Message
 from aiogram.fsm.context import FSMContext
 
 from aiogram_sentinel import Sentinel, SentinelConfig
@@ -1023,7 +1024,7 @@ async def show_support(callback: CallbackQuery):
 @dp.callback_query(F.data == "renew")
 async def show_packages(callback: CallbackQuery):
     text = (
-        "💳 <b>Продление доступа</b>\n\n"
+        "<b>Продление доступа</b>\n\n"
         "Выберите подходящий пакет:"
     )
 
@@ -1036,17 +1037,51 @@ async def show_packages(callback: CallbackQuery):
 
 @dp.callback_query(F.data.in_({"buy_week", "buy_month", "buy_year"}))
 async def select_package(callback: CallbackQuery):
+    await callback.answer()
+    
     packages = {
         "buy_week": ("Неделя", 99, 7),
         "buy_month": ("Месяц", 299, 30),
         "buy_year": ("Год", 999, 365),
     }
-
+    
     package_name, price, days = packages[callback.data]
+    
+    # Создаём счёт в звёздах (XTR)
+    await callback.bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=f"Подписка GrenadeCS2 ({package_name})",
+        description=f"Доступ к базе раскидок на {days} дней",
+        payload=f"stars_{callback.data}_{days}",  # ← ВАЖНО: сюда пишем, что купили
+        provider_token="",  # ← Для звёзд пусто
+        currency="XTR",     # ← Ключевой момент
+        prices=[LabeledPrice(label=package_name, amount=price)],
+        start_parameter=f"buy_{callback.data}"
+    )
 
-    await callback.answer(
-        f"Платежная система в разработке, чтобы пополнить дни пишите - @syntax322",
-        show_alert=True
+
+@dp.pre_checkout_query()
+async def pre_checkout_handler(pre_checkout_q: PreCheckoutQuery):
+    # Здесь можно проверить, что пользователь ещё не подписан, и т.д.
+    await pre_checkout_q.answer(ok=True)
+
+@dp.message(F.successful_payment)
+async def success_payment_handler(message: Message):
+    payment_info = message.successful_payment
+    user_id = message.from_user.id
+    payload = payment_info.invoice_payload  # ← забираем то, что писали в payload
+    
+    # Парсим payload: stars_buy_week_7
+    parts = payload.split("_")
+    days = int(parts[-1])  # ← берём количество дней
+    
+    # Начисляем дни в БД
+    await add_days(user_id, days)
+    
+    await message.answer(
+        f"✅ <b>Оплата звёздами прошла!</b>\n\n"
+        f"Вам начислено <b>{days} дней</b> доступа. Спасибо! 🎉",
+        parse_mode="HTML"
     )
 
 # ==================== ИНФО ====================

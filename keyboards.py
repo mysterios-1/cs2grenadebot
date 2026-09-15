@@ -278,22 +278,13 @@ def get_subscription_packages_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(
-            text="Неделя — 99 ₽",
-            callback_data="buy_week"
-        )
+        create_btn("week", "Неделя — 99 ₽", callback_data="buy_week")
     )
     builder.row(
-        InlineKeyboardButton(
-            text="Месяц — 299 ₽",
-            callback_data="buy_month"
-        )
+        create_btn("month", "Месяц — 299 ₽", callback_data="buy_month")
     )
     builder.row(
-        InlineKeyboardButton(
-            text="Год — 999 ₽",
-            callback_data="buy_year"
-        )
+        create_btn("year", "Год — 999 ₽", callback_data="buy_year")
     )
     builder.row(
         create_btn("left", "Назад", callback_data="profile")

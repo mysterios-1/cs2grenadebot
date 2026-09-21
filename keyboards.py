@@ -87,7 +87,7 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
     
     cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
     
-    # --- РЯД 1: Кнопки сторон (Т/СТ) ---
+    # 1. Кнопки сторон (Т/СТ) — Ровно две кнопки в один ряд
     if current_zone != "situational":
         if current_side == "t":
             side_t, emoji_t = "» За Т «", "t"
@@ -96,59 +96,55 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
             side_t, emoji_t = "За Т", None
             side_ct, emoji_ct = "» За СТ «", "ct"
         
-        builder.add(
+        builder.row(
             create_btn(emoji_t, side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t") if emoji_t else InlineKeyboardButton(text=side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t"),
             create_btn(emoji_ct, side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct") if emoji_ct else InlineKeyboardButton(text=side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct")
         )
-        builder.adjust(2)  # Жестко фиксируем: этот ряд занимает ровно 2 колонки
-
-    # --- РЯД 2: Кнопки зон (Только для обычных гранат) ---
+    
+    # 2. Кнопки зон — Сетка 2х2 (Только для стандартных гранат)
     if grenade_type not in ["insta", "oneway"]:
         z_a = "» Плент А «" if current_zone == "a" else "Плент А"
         z_b = "» Плент Б «" if current_zone == "b" else "Плент Б"
         z_mid = "» Мид «" if current_zone == "mid" else "Мид"
         z_sit = "» Ситуация «" if current_zone == "situational" else "Ситуация"
     
-        zone_builder = InlineKeyboardBuilder()
-        zone_builder.add(
+        builder.row(
             create_btn("plant_a", z_a, callback_data=f"filter_{map_name}_{grenade_type}_a_{current_side}"),
-            create_btn("plant_b", z_b, callback_data=f"filter_{map_name}_{grenade_type}_b_{current_side}"),
+            create_btn("plant_b", z_b, callback_data=f"filter_{map_name}_{grenade_type}_b_{current_side}")
+        )
+        builder.row(
             create_btn("mid", z_mid, callback_data=f"filter_{map_name}_{grenade_type}_mid_{current_side}"),
             create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational_{current_side}")
         )
-        zone_builder.adjust(2, 2)  # Сетка зон 2х2
-        builder.attach(zone_builder)
     
-    # --- РЯД 3: Список раскидок (СТРОГО ОДНА НА СТРОКУ) ---
+    # 3. Список раскидок — СТРОГО каждая раскидка на новой строчке (Row)
     for throw_id, title in throws_list:
         builder.row(InlineKeyboardButton(text=title, callback_data=f"view_{throw_id}"))
         
-    # --- РЯД 4: Пагинация (Назад / Далее) ---
+    # 4. Пагинация (Назад / Далее) — Кнопки встают вместе на один предпоследний ряд
     total_pages = (total_count + limit - 1) // limit
     if total_pages < 1:
         total_pages = 1
 
     if total_pages > 1:
-        nav_builder = InlineKeyboardBuilder()
+        nav_buttons = []
         if page > 1:
-            nav_builder.add(InlineKeyboardButton(
+            nav_buttons.append(InlineKeyboardButton(
                 text="Назад",
                 callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"
             ))
         if page < total_pages:
-            nav_builder.add(InlineKeyboardButton(
+            nav_buttons.append(InlineKeyboardButton(
                 text="Далее",
                 callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"
             ))
-        nav_builder.adjust(2)
-        builder.attach(nav_builder)
+        if nav_buttons:
+            builder.row(*nav_buttons)
 
-    # --- РЯД 5: Кнопка возврата (ОДНА НА ЛИНИИ) ---
+    # 5. Кнопка возврата — Жестко пишем в отдельный ряд, чтобы она стояла одна снизу
     builder.row(create_btn("left", "Назад к категориям", callback_data=f"map_{map_name}"))
 
     return builder.as_markup()
-
-
 
 
 

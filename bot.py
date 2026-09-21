@@ -286,34 +286,56 @@ async def show_grenade_type(callback: CallbackQuery):
     LIMIT = 7
     OFFSET = (current_page - 1) * LIMIT
 
-    # Точное определение ключа фото (Исправлено для insta и oneway)
+    # Исправляем подбор фото: приводим к нижнему регистру и проверяем условия
     insta_maps = ["mirage", "dust2", "inferno", "nuke", "anubis", "ancient"]
+    map_lower = map_name.lower()
+    side_lower = current_side.lower()
+
     if current_zone == "situational":
-        photo_key = f"{map_name.lower()}_situational"
-    elif grenade_type == "insta" and map_name.lower() in insta_maps:
-        photo_key = f"{map_name.lower()}_resp_{current_side.lower()}"
+        photo_key = f"{map_lower}_situational"
+    elif grenade_type == "insta" and map_lower in insta_maps:
+        photo_key = f"{map_lower}_resp_{side_lower}"
     elif grenade_type == "oneway":
-        photo_key = f"{map_name.lower()}_oneway"  # Возвращаем ключ для ванвеев, если он был
+        photo_key = f"{map_lower}_oneway"
     else:
         photo_key = "main_menu"
 
-    # Загрузка данных из БД (Вызов zone="all" оптимизирован)
+    # Запрашиваем фото параллельно, чтобы не терять скорость
+    photo_task = asyncio.create_task(get_bot_photo(photo_key))
+
+    # СБОР ДАННЫХ ИЗ БД ДЛЯ INSTA И ONEWAY (Позонно, без строки "all")
     if grenade_type in {"insta", "oneway"} and current_zone == "all":
-        total_count, throws_list, bot_photo = await asyncio.gather(
-            get_throws_count(map_name, grenade_type, zone="all", side=current_side),
-            get_throws(map_name, grenade_type, zone="all", side=current_side, limit=LIMIT, offset=OFFSET),
-            get_bot_photo(photo_key)
-        )
+        possible_zones = ["a", "b", "mid", "situational"]
+        
+        # Собираем общее количество параллельно
+        count_tasks = [get_throws_count(map_name, grenade_type, zone=z, side=current_side) for z in possible_zones]
+        counts = await asyncio.gather(*count_tasks)
+        total_count = sum(counts)
+
+        # Вытаскиваем сами раскидки (берем с запасом, чтобы точно хватило под срез пагинации)
+        throws_tasks = [get_throws(map_name, grenade_type, zone=z, side=current_side, limit=LIMIT + OFFSET, offset=0) for z in possible_zones]
+        throws_results = await asyncio.gather(*throws_tasks)
+        
+        all_throws = []
+        for items in throws_results:
+            if items:
+                all_throws.extend(items)
+        
+        # Применяем лимиты пагинации прямо в памяти
+        throws_list = all_throws[OFFSET : OFFSET + LIMIT]
     else:
-        total_count, throws_list, bot_photo = await asyncio.gather(
+        # Для обычных категорий гранат
+        total_count, throws_list = await asyncio.gather(
             get_throws_count(map_name, grenade_type, zone=current_zone, side=current_side),
-            get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET),
-            get_bot_photo(photo_key)
+            get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET)
         )
 
+    # Дожидаемся фото
+    bot_photo = await photo_task
     if not bot_photo and photo_key != "main_menu":
         bot_photo = await get_bot_photo("main_menu")
 
+    # Текстовые блоки (Полностью твои оригинальные)
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки",
         "molotov": "Молики", "insta": "Insta Смоки", "oneway": "One-Way Смоки",
@@ -357,6 +379,7 @@ async def show_grenade_type(callback: CallbackQuery):
         await callback.message.delete()
     except Exception:
         pass
+
 
 
 # ==================== ФИЛЬТР ПО ЗОНАМ ====================

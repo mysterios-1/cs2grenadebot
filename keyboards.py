@@ -85,10 +85,9 @@ def get_map_detail_menu(map_name: str) -> InlineKeyboardMarkup:
 def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, page: int, total_count: int, current_zone: str = "a", current_side: str = "t", limit: int = 5) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # 1. ОПТИМИЗАЦИЯ И ИСПРАВЛЕНИЕ БАГА: выносим объявление cb_zone наверх, чтобы пагинация не крашилась
     cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
     
-    # Кнопки сторон (Т/СТ) — показываем ТОЛЬКО если это не ситуационная зона
+    # --- РЯД 1: Кнопки сторон (Т/СТ) ---
     if current_zone != "situational":
         if current_side == "t":
             side_t, emoji_t = "» За Т «", "t"
@@ -97,61 +96,58 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
             side_t, emoji_t = "За Т", None
             side_ct, emoji_ct = "» За СТ «", "ct"
         
-        # Убираем дублирование условий: create_btn вызывается линейно
-        builder.row(
+        builder.add(
             create_btn(emoji_t, side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t") if emoji_t else InlineKeyboardButton(text=side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t"),
             create_btn(emoji_ct, side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct") if emoji_ct else InlineKeyboardButton(text=side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct")
         )
-    
-    # Кнопки зон — показываем для обычных гранат
+        builder.adjust(2)  # Жестко фиксируем: этот ряд занимает ровно 2 колонки
+
+    # --- РЯД 2: Кнопки зон (Только для обычных гранат) ---
     if grenade_type not in ["insta", "oneway"]:
         z_a = "» Плент А «" if current_zone == "a" else "Плент А"
         z_b = "» Плент Б «" if current_zone == "b" else "Плент Б"
         z_mid = "» Мид «" if current_zone == "mid" else "Мид"
         z_sit = "» Ситуация «" if current_zone == "situational" else "Ситуация"
     
-        builder.row(
+        zone_builder = InlineKeyboardBuilder()
+        zone_builder.add(
             create_btn("plant_a", z_a, callback_data=f"filter_{map_name}_{grenade_type}_a_{current_side}"),
             create_btn("plant_b", z_b, callback_data=f"filter_{map_name}_{grenade_type}_b_{current_side}"),
             create_btn("mid", z_mid, callback_data=f"filter_{map_name}_{grenade_type}_mid_{current_side}"),
             create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational_{current_side}")
         )
+        zone_builder.adjust(2, 2)  # Сетка зон 2х2
+        builder.attach(zone_builder)
     
-    # Список раскидок (генерируется моментально)
+    # --- РЯД 3: Список раскидок (СТРОГО ОДНА НА СТРОКУ) ---
     for throw_id, title in throws_list:
         builder.row(InlineKeyboardButton(text=title, callback_data=f"view_{throw_id}"))
         
-    # Рассчитываем пагинацию
+    # --- РЯД 4: Пагинация (Назад / Далее) ---
     total_pages = (total_count + limit - 1) // limit
     if total_pages < 1:
         total_pages = 1
 
-    # Собираем строку навигации без создания лишних списков, если они не нужны
     if total_pages > 1:
-        nav_row = []
+        nav_builder = InlineKeyboardBuilder()
         if page > 1:
-            nav_row.append(InlineKeyboardButton(
+            nav_builder.add(InlineKeyboardButton(
                 text="Назад",
                 callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"
             ))
         if page < total_pages:
-            nav_row.append(InlineKeyboardButton(
+            nav_builder.add(InlineKeyboardButton(
                 text="Далее",
                 callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"
             ))
-        if nav_row:
-            builder.row(*nav_row)
+        nav_builder.adjust(2)
+        builder.attach(nav_builder)
 
-    # Финальная кнопка возврата
+    # --- РЯД 5: Кнопка возврата (ОДНА НА ЛИНИИ) ---
     builder.row(create_btn("left", "Назад к категориям", callback_data=f"map_{map_name}"))
-    
-    # 2. ОПТИМИЗАЦИЯ СЕТКИ: Применяем adjust всего один раз в самом конце
-    if grenade_type not in ["insta", "oneway"]:
-        builder.adjust(2, 2) if current_zone == "situational" else builder.adjust(2, 2, 2)
-    else:
-        builder.adjust(2)
 
     return builder.as_markup()
+
 
 
 

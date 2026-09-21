@@ -260,17 +260,14 @@ from aiogram.types import CallbackQuery
 async def show_grenade_type(callback: CallbackQuery):
     user_id = callback.from_user.id
 
-    # 1. ЗАЩИТА НА ПЕРВОМ МЕСТЕ: Сразу отсекаем неавторизованных
     if not await check_access(user_id):
         await callback.answer("Доступ ограничен.", show_alert=True)
         return
 
-    # Моментально убираем часики с кнопки в Telegram
     await callback.answer()
-    
     raw_data = callback.data
     
-    # Парсим callback_data (логика строго твоя)
+    # Парсинг callback_data
     if raw_data.startswith("side_"):
         _, map_name, grenade_type, current_zone, current_side = raw_data.split("_")
         current_page = 1
@@ -289,37 +286,34 @@ async def show_grenade_type(callback: CallbackQuery):
     LIMIT = 7
     OFFSET = (current_page - 1) * LIMIT
 
-    # Определяем ключ для фото заранее, чтобы запросить его в одном пакете с данными раскидок
+    # Точное определение ключа фото (Исправлено для insta и oneway)
     insta_maps = ["mirage", "dust2", "inferno", "nuke", "anubis", "ancient"]
     if current_zone == "situational":
         photo_key = f"{map_name.lower()}_situational"
     elif grenade_type == "insta" and map_name.lower() in insta_maps:
         photo_key = f"{map_name.lower()}_resp_{current_side.lower()}"
+    elif grenade_type == "oneway":
+        photo_key = f"{map_name.lower()}_oneway"  # Возвращаем ключ для ванвеев, если он был
     else:
         photo_key = "main_menu"
 
-    # 2. УЛЬТРА-ОПТИМИЗАЦИЯ БД: Запускаем ВСЕ запросы (счетчик, список И фото) ОДНОВРЕМЕННО через asyncio.gather.
-    # Больше никаких циклов и 8 запросов подряд для режима zone == "all".
+    # Загрузка данных из БД (Вызов zone="all" оптимизирован)
     if grenade_type in {"insta", "oneway"} and current_zone == "all":
-        # Передаем zone="all" в твои методы get_throws_count и get_throws, чтобы база отдала данные одним махом
         total_count, throws_list, bot_photo = await asyncio.gather(
             get_throws_count(map_name, grenade_type, zone="all", side=current_side),
             get_throws(map_name, grenade_type, zone="all", side=current_side, limit=LIMIT, offset=OFFSET),
             get_bot_photo(photo_key)
         )
     else:
-        # Для обычных гранат или конкретных зон также делаем тройной одновременный залп
         total_count, throws_list, bot_photo = await asyncio.gather(
             get_throws_count(map_name, grenade_type, zone=current_zone, side=current_side),
             get_throws(map_name, grenade_type, zone=current_zone, side=current_side, limit=LIMIT, offset=OFFSET),
             get_bot_photo(photo_key)
         )
 
-    # Если кастомное фото не найдено в базе, быстро добираем дефолтное main_menu
     if not bot_photo and photo_key != "main_menu":
         bot_photo = await get_bot_photo("main_menu")
 
-    # 3. Формируем тексты интерфейса (Логика строго твоя)
     grenade_names = {
         "smoke": "Смоки", "flash": "Флешки", "he": "Хаешки",
         "molotov": "Молики", "insta": "Insta Смоки", "oneway": "One-Way Смоки",
@@ -350,8 +344,6 @@ async def show_grenade_type(callback: CallbackQuery):
         limit=LIMIT,
     )
 
-    # 4. СЕТЕВАЯ ОПТИМИЗАЦИЯ: Сначала шлем новую карточку, а старую стираем в самом конце.
-    # Так как картинка уже получена параллельно с данными, отправка происходит моментально.
     if bot_photo:
         await callback.message.answer_photo(
             photo=bot_photo, caption=text, reply_markup=reply_markup, parse_mode="HTML"
@@ -365,7 +357,6 @@ async def show_grenade_type(callback: CallbackQuery):
         await callback.message.delete()
     except Exception:
         pass
-
 
 
 # ==================== ФИЛЬТР ПО ЗОНАМ ====================

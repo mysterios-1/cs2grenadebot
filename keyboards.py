@@ -85,27 +85,25 @@ def get_map_detail_menu(map_name: str) -> InlineKeyboardMarkup:
 def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, page: int, total_count: int, current_zone: str = "a", current_side: str = "t", limit: int = 5) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
+    # 1. ОПТИМИЗАЦИЯ И ИСПРАВЛЕНИЕ БАГА: выносим объявление cb_zone наверх, чтобы пагинация не крашилась
+    cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
+    
     # Кнопки сторон (Т/СТ) — показываем ТОЛЬКО если это не ситуационная зона
     if current_zone != "situational":
         if current_side == "t":
-            side_t = "» За Т «"
-            emoji_t = "t"
-            side_ct = "За СТ"
-            emoji_ct = None
+            side_t, emoji_t = "» За Т «", "t"
+            side_ct, emoji_ct = "За СТ", None
         else:
-            side_t = "За Т"
-            emoji_t = None
-            side_ct = "» За СТ «"
-            emoji_ct = "ct"
+            side_t, emoji_t = "За Т", None
+            side_ct, emoji_ct = "» За СТ «", "ct"
         
-        cb_zone = "all" if grenade_type in ["insta", "oneway"] else current_zone
-        
+        # Убираем дублирование условий: create_btn вызывается линейно
         builder.row(
             create_btn(emoji_t, side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t") if emoji_t else InlineKeyboardButton(text=side_t, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_t"),
             create_btn(emoji_ct, side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct") if emoji_ct else InlineKeyboardButton(text=side_ct, callback_data=f"side_{map_name}_{grenade_type}_{cb_zone}_ct")
         )
     
-    # Кнопки зон - показываем для обычных гранат
+    # Кнопки зон — показываем для обычных гранат
     if grenade_type not in ["insta", "oneway"]:
         z_a = "» Плент А «" if current_zone == "a" else "Плент А"
         z_b = "» Плент Б «" if current_zone == "b" else "Плент Б"
@@ -118,43 +116,43 @@ def get_throws_list_menu(map_name: str, grenade_type: str, throws_list: list, pa
             create_btn("mid", z_mid, callback_data=f"filter_{map_name}_{grenade_type}_mid_{current_side}"),
             create_btn("situationally", z_sit, callback_data=f"filter_{map_name}_{grenade_type}_situational_{current_side}")
         )
-        # Если скрыли кнопки сторон, сделаем другую сетку
-        if current_zone == "situational":
-            builder.adjust(2, 2)
-        else:
-            builder.adjust(2, 2, 2)
-    else:
-        builder.adjust(2)
     
-    # Список раскидок
+    # Список раскидок (генерируется моментально)
     for throw_id, title in throws_list:
         builder.row(InlineKeyboardButton(text=title, callback_data=f"view_{throw_id}"))
         
-    total_pages = (total_count + limit - 1) // limit
-    if total_pages == 0: total_pages = 1
-
-        # Пагинация — только Назад/Далее (как в избранном)
+    # Рассчитываем пагинацию
     total_pages = (total_count + limit - 1) // limit
     if total_pages < 1:
         total_pages = 1
 
-    nav_row = []
-    if page > 1:
-        nav_row.append(InlineKeyboardButton(
-            text="Назад",
-            callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"
-        ))
-    if page < total_pages:
-        nav_row.append(InlineKeyboardButton(
-            text="Далее",
-            callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"
-        ))
-    
-    if nav_row:
-        builder.row(*nav_row)
+    # Собираем строку навигации без создания лишних списков, если они не нужны
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton(
+                text="Назад",
+                callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page-1}"
+            ))
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton(
+                text="Далее",
+                callback_data=f"listpage_{map_name}_{grenade_type}_{cb_zone}_{current_side}_{page+1}"
+            ))
+        if nav_row:
+            builder.row(*nav_row)
 
+    # Финальная кнопка возврата
     builder.row(create_btn("left", "Назад к категориям", callback_data=f"map_{map_name}"))
+    
+    # 2. ОПТИМИЗАЦИЯ СЕТКИ: Применяем adjust всего один раз в самом конце
+    if grenade_type not in ["insta", "oneway"]:
+        builder.adjust(2, 2) if current_zone == "situational" else builder.adjust(2, 2, 2)
+    else:
+        builder.adjust(2)
+
     return builder.as_markup()
+
 
 
 
@@ -173,7 +171,12 @@ def get_throw_page_kb(throw_id: int, page: int) -> InlineKeyboardMarkup:
 
 def get_combo_page_kb(throw_id, current_view, combo_list=None, user_id=0, admin_id=0, is_fav=False, source="list"):
     builder = InlineKeyboardBuilder()
+    
+    # 1. Быстро определяем, является ли раскидка одиночной
     is_single = not combo_list or len(combo_list) <= 1
+    
+    # Текст для кнопки возврата (вынесено из условий, чтобы не дублировать код)
+    back_text = "В избранное" if source == "fav" else "К списку"
     
     if is_single:
         if current_view == "pos":
@@ -186,13 +189,10 @@ def get_combo_page_kb(throw_id, current_view, combo_list=None, user_id=0, admin_
         elif current_view == "result":
             builder.row(create_btn("left", "Назад", callback_data=f"page_{throw_id}_2_{source}"))
         
-        # Красиво создаем кнопку через твою функцию create_btn
-        if is_fav:
-            fav_btn = create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}")
-        else:
-            fav_btn = create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}")
+        # Кнопка избранного
+        fav_btn = (create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}") if is_fav 
+                   else create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}"))
         
-        back_text = "В избранное" if source == "fav" else "К списку"
         builder.row(
             create_btn("left", back_text, callback_data=f"back_to_list_placeholder_{source}"),
             fav_btn
@@ -206,49 +206,36 @@ def get_combo_page_kb(throw_id, current_view, combo_list=None, user_id=0, admin_
         
         return builder.as_markup()
     
-    # ЛОГИКА ДЛЯ КОМБО-СВЯЗОК
-    current_index = 0
+    # 2. ОПТИМИЗАЦИЯ ДЛЯ КОМБО-СВЯЗОК
     total = len(combo_list)
-    for i, item in enumerate(combo_list):
-        if item[0] == throw_id:
-            current_index = i
-            break
-    
     first_throw_id = combo_list[0][0]
-    buttons = []
+    
+    # Быстрый поиск текущего индекса раскидки без полного прохода цикла
+    current_index = next((i for i, item in enumerate(combo_list) if item[0] == throw_id), 0)
     
     if current_view == "pos":
-        first_id = combo_list[0][0]
-        buttons.append(create_btn("right", "Далее", callback_data=f"page_{first_id}_2_{source}"))
-        builder.row(*buttons)
+        # ИСПРАВЛЕН БАГ: переход к прицелу ТЕКУЩЕЙ раскидки (throw_id), а не всегда первой (first_id)
+        builder.row(create_btn("right", "Далее", callback_data=f"page_{throw_id}_2_{source}"))
+        
     elif current_view == "aim":
-        if current_index == 0:
-            buttons.append(create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1_{source}"))
-        else:
-            prev_id = combo_list[current_index - 1][0]
-            buttons.append(create_btn("left", "Назад", callback_data=f"page_{prev_id}_2_{source}"))
+        # Формируем левую кнопку
+        left_btn = (create_btn("left", "Позиция", callback_data=f"page_{throw_id}_1_{source}") if current_index == 0 
+                    else create_btn("left", "Назад", callback_data=f"page_{combo_list[current_index - 1][0]}_2_{source}"))
         
-        if current_index < total - 1:
-            next_id = combo_list[current_index + 1][0]
-            buttons.append(create_btn("right", "Следующая", callback_data=f"page_{next_id}_2_{source}"))
-        else:
-            buttons.append(create_btn("right", "Результат", callback_data=f"page_{first_throw_id}_3_{source}"))
+        # Формируем правую кнопку
+        right_btn = (create_btn("right", "Следующая", callback_data=f"page_{combo_list[current_index + 1][0]}_2_{source}") if current_index < total - 1 
+                     else create_btn("right", "Результат", callback_data=f"page_{first_throw_id}_3_{source}"))
         
-        builder.row(*buttons)
+        builder.row(left_btn, right_btn)
+        
     elif current_view == "result":
-        last_id = combo_list[-1][0]
-        buttons.append(create_btn("left", "Назад", callback_data=f"page_{last_id}_2_{source}"))
-        builder.row(*buttons)
+        builder.row(create_btn("left", "Назад", callback_data=f"page_{combo_list[-1][0]}_2_{source}"))
     
+    # Кнопка избранного для комбо
     is_current_fav = True if source == "fav" else is_fav
-
-    # Создаем комбо-кнопку через твою функцию create_btn
-    if is_current_fav:
-        fav_btn = create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}")
-    else:
-        fav_btn = create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}")
+    fav_btn = (create_btn("favorites", "Убрать", callback_data=f"fav_remove_{throw_id}_{source}") if is_current_fav 
+               else create_btn("favorites", "В избранное", callback_data=f"fav_add_{throw_id}_{source}"))
     
-    back_text = "В избранное" if source == "fav" else "К списку"
     builder.row(
         create_btn("left", back_text, callback_data=f"back_to_list_placeholder_{source}"),
         fav_btn
@@ -261,6 +248,7 @@ def get_combo_page_kb(throw_id, current_view, combo_list=None, user_id=0, admin_
         )
     
     return builder.as_markup()
+
 
 
 def get_profile_menu() -> InlineKeyboardMarkup:

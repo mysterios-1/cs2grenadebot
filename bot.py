@@ -1100,15 +1100,16 @@ import logging
 
 @dp.callback_query(F.data == "renew")
 async def show_packages(callback: CallbackQuery):
-    # 1. СЕТЕВАЯ ОПТИМИЗАЦИЯ: Сразу тушим кнопку
     await callback.answer()
     
     text = (
-        "<b>Продление доступа</b>\n\n"
-        "Выберите подходящий пакет:"
+        "💳 <b>Продление доступа</b>\n\n"
+        "Выберите подходящий пакет:\n"
+        "• Неделя — <b>99 ₽</b>\n"
+        "• Месяц — <b>299 ₽</b>\n"
+        "• Год — <b>999 ₽</b>"
     )
 
-    # Защита от спама (если меню уже открыто)
     try:
         await callback.message.edit_caption(
             caption=text,
@@ -1122,7 +1123,11 @@ async def show_packages(callback: CallbackQuery):
 
 @dp.callback_query(F.data.in_({"buy_week", "buy_month", "buy_year"}))
 async def select_package(callback: CallbackQuery):
-    # Моментально гасим часики на кнопке, чтобы бот реагировал мгновенно
+    """
+    ЗАГЛУШКА НА ВРЕМЯ СОГЛАСОВАНИЯ ПЛАТЕЖКИ.
+    Когда подключишь Robokassa / PayMaster / Ckassa — заменишь этот блок
+    на генерацию ссылки на оплату.
+    """
     await callback.answer()
     
     packages = {
@@ -1133,62 +1138,13 @@ async def select_package(callback: CallbackQuery):
     
     package_name, price, days = packages[callback.data]
     
-    # 2. ЗАЩИТА СЕТИ: Обертываем отправку инвойса. Если юзер заблокал бота — он не повесит поток.
-    try:
-        await callback.bot.send_invoice(
-            chat_id=callback.from_user.id,
-            title=f"Подписка GrenadeCS2 ({package_name})",
-            description=f"Доступ к базе раскидок на {days} дней",
-            payload=f"stars_{callback.data}_{days}",
-            provider_token="",  
-            currency="XTR",     
-            prices=[LabeledPrice(label=package_name, amount=price)],
-            start_parameter=f"buy_{callback.data}"
-        )
-    except Exception as e:
-        logging.error(f"Ошибка отправки инвойса пользователю {callback.from_user.id}: {e}")
-
-
-@dp.pre_checkout_query()
-async def pre_checkout_handler(pre_checkout_q: PreCheckoutQuery):
-    # Telegram требует ответить на этот запрос в течение 10 секунд, иначе платеж сорвется.
-    # Оставляем его максимально легким и быстрым.
-    await pre_checkout_q.answer(ok=True)
-
-
-@dp.message(F.successful_payment)
-async def success_payment_handler(message: Message):
-    payment_info = message.successful_payment
-    user_id = message.from_user.id
-    payload = payment_info.invoice_payload  
-    
-    try:
-        parts = payload.split("_")
-        days = int(parts[-1])  
-    except (ValueError, IndexError) as e:
-        logging.error(f"Критическая ошибка парсинга payload {payload} для юзера {user_id}: {e}")
-        await message.answer("⚠ Произошла ошибка при обработке платежа. Пожалуйста, напишите администратору.")
-        return
-    
-    # 3. БЕЗОПАСНОСТЬ ДЕНЕГ: Обертываем запись в БД. 
-    # Если SQLite будет заблокирован другим процессором, бот попробует еще раз или выдаст четкую ошибку.
-    try:
-        await add_days(user_id, days)
-        
-        await message.answer(
-            f"✅ <b>Оплата звёздами прошла!</b>\n\n"
-            f"Вам начислено <b>{days} дней</b> доступа. Спасибо! 🎉",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        # Если база упала, логируем ВСЕ данные, чтобы админ мог начислить вручную и деньги не пропали
-        logging.critical(f"!!! ОШИБКА НАЧИСЛЕНИЯ ПОДПИСКИ !!! Юзер: {user_id}, Дней: {days}. Ошибка: {e}")
-        await message.answer(
-            "⚠ <b>Ваша оплата получена, но произошел сбой в базе данных.</b>\n"
-            "Не переживайте, администрация уже уведомлена и активирует вам доступ вручную в ближайшее время!",
-            parse_mode="HTML"
-        )
-
+    # ЗАГЛУШКА — пока платёжка на согласовании
+    await callback.answer(
+        f"⏳ Оплата картой временно недоступна — платёжная система на согласовании.\n\n"
+        f"Пакет: {package_name} — {price} ₽\n\n"
+        f"Чтобы оплатить сейчас — напишите @syntax322",
+        show_alert=True
+    )
 
 # ==================== ИНФО ====================
 

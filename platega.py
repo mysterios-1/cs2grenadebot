@@ -6,7 +6,7 @@ from typing import Optional
 # ========== НАСТРОЙКИ ==========
 PLATEGA_MERCHANT_ID = "4ed377e6-ffc2-4b14-8cc0-c0b2dbd94523"
 PLATEGA_SECRET = "eGGg0NcNf3HFGpGyRRWiPF5jw6GLb1t3vVxC6L6NzxhGmA8WITqs3BOnEyLoMbHA4V76nwJ2jxfdAfFNzyxCGAFOYF2n731wqbk5"
-PLATEGA_API_URL = "https://app.platega.io/transaction/process"
+PLATEGA_API_URL = "https://app.platega.io/v2/transaction/process"
 # ==============================
 
 
@@ -53,7 +53,7 @@ async def create_platega_link(
                 if response.status == 200:
                     data = await response.json()
                     # В ответе приходит поле "redirect" со ссылкой на оплату
-                    link = data.get("redirect") or data.get("url")
+                    link = data.get("url") or data.get("redirect")
                     return link
                 else:
                     error_text = await response.text()

@@ -28,6 +28,7 @@ from emojis_config import CUSTOM_EMOJIS
 from keyboards import *
 
 from admin import admin_router, EditThrowState, ADMINS
+from platega import create_platega_link
 
 load_dotenv()
 
@@ -1123,11 +1124,6 @@ async def show_packages(callback: CallbackQuery):
 
 @dp.callback_query(F.data.in_({"buy_week", "buy_month", "buy_year"}))
 async def select_package(callback: CallbackQuery):
-    """
-    ЗАГЛУШКА НА ВРЕМЯ СОГЛАСОВАНИЯ ПЛАТЕЖКИ.
-    Когда подключишь Robokassa / PayMaster / Ckassa — заменишь этот блок
-    на генерацию ссылки на оплату.
-    """
     await callback.answer()
     
     packages = {
@@ -1137,13 +1133,34 @@ async def select_package(callback: CallbackQuery):
     }
     
     package_name, price, days = packages[callback.data]
+    user_id = callback.from_user.id
     
-    # ЗАГЛУШКА — пока платёжка на согласовании
-    await callback.answer(
-        f"⏳ Оплата картой временно недоступна — платёжная система на согласовании.\n\n"
-        f"Пакет: {package_name} — {price} ₽\n\n"
-        f"Чтобы оплатить сейчас — напишите @syntax322",
-        show_alert=True
+    # Создаём ссылку на оплату
+    payment_url = await create_platega_link(
+        amount=price,
+        description=f"Подписка GrenadeCS2 ({package_name})",
+        user_id=user_id,
+        days=days
+    )
+    
+    if not payment_url:
+        await callback.answer("❌ Ошибка создания платежа, попробуйте позже", show_alert=True)
+        return
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=f"💳 Оплатить {price} ₽", url=payment_url)
+    )
+    builder.row(create_btn("left", "Назад", callback_data="renew"))
+    
+    await callback.message.edit_caption(
+        caption=f"💳 <b>Оплата подписки</b>\n\n"
+                f"📦 Пакет: <b>{package_name}</b>\n"
+                f"💰 Сумма: <b>{price} ₽</b>\n"
+                f"📅 Дней: <b>{days}</b>\n\n"
+                f"Нажмите кнопку ниже, чтобы перейти к оплате.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
     )
 
 # ==================== ИНФО ====================

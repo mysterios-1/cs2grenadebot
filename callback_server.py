@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI, Request, Header, HTTPException
 import logging
 from dotenv import load_dotenv
-from database import add_days
+from database import add_days, confirm_payment, save_payment
 from aiogram.exceptions import TelegramForbiddenError
 
 load_dotenv()
@@ -35,13 +35,16 @@ async def platega_callback(
     x_merchantid: str = Header(None),
     x_secret: str = Header(None)
 ):
-    """Принимает уведомления от Platega о статусе платежа"""
+    """
+    Принимает уведомления от Platega о статусе платежа.
+    Platega отправляет POST с заголовками X-MerchantId и X-Secret.
+    """
     # 1. Проверяем, что запрос от Platega
     if x_merchantid != PLATEGA_MERCHANT_ID or x_secret != PLATEGA_SECRET:
         logging.warning(f"[Platega] Unauthorized: merchant={x_merchantid}")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    # 2. Читаем тело
+    # 2. Читаем тело запроса
     try:
         data = await request.json()
     except Exception as e:
@@ -49,19 +52,30 @@ async def platega_callback(
         return {"status": "ok"}
     
     logging.info(f"[Platega] Callback: {data}")
+    
     status = data.get("status")
     
-    # 3. Обработка статуса
+    # 3. Обрабатываем успешную оплату
     if status == "CONFIRMED":
         payload = data.get("payload", "")
+        # payload = "user_123_days_7_msg_456"
         try:
             parts = payload.split("_")
             user_id = int(parts[1])
             days = int(parts[3])
+            message_id = int(parts[5]) if len(parts) > 5 else None
             
+            # Начисляем дни
             await add_days(user_id, days)
             logging.info(f"[Platega] Начислено {days} дней юзеру {user_id}")
             
+            # 🆕 Записываем платёж для статистики /refstat
+            payment_id = f"platega_{data.get('id', 'unknown')}"
+            await save_payment(user_id, 0, days, payment_id)
+            await confirm_payment(payment_id)
+            logging.info(f"[Platega] Платёж {payment_id} записан в статистику")
+            
+            # Отправляем сообщение пользователю
             if _bot:
                 try:
                     await _bot.send_message(
@@ -74,17 +88,17 @@ async def platega_callback(
                     logging.warning(f"[Platega] Юзер {user_id} заблокировал бота")
                 except Exception as e:
                     logging.error(f"[Platega] Ошибка отправки {user_id}: {e}")
+            else:
+                logging.warning("[Platega] _bot не установлен — сообщение не отправлено")
+                
         except (ValueError, IndexError) as e:
-            logging.error(f"[Platega] Ошибка payload '{payload}': {e}")
+            logging.error(f"[Platega] Ошибка парсинга payload '{payload}': {e}")
     
     elif status == "CANCELED":
         logging.info(f"[Platega] Платёж отменён: {data.get('id')}")
-    elif status == "CHARGEBACKED":
-        logging.warning(f"[Platega] Возврат: {data.get('id')}")
     
+    elif status == "CHARGEBACKED":
+        logging.warning(f"[Platega] Возврат средств: {data.get('id')}")
+    
+    # 4. Обязательно отвечаем 200
     return {"status": "ok"}
-
-
-@app.get("/")
-async def root():
-    return {"status": "ok", "service": "Platega callback"}

@@ -552,6 +552,31 @@ async def get_favorites_count_by_map(user_id: int, map_name: str) -> int:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+async def get_referral_stats(user_id: int) -> dict:
+    """
+    Возвращает статистику по рефералам:
+    - total: сколько всего пришло
+    - paid: сколько из них купило (есть confirmed платёж)
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Всего рефералов
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM users WHERE referrer_id = ?",
+            (user_id,)
+        )
+        total = (await cursor.fetchone())[0]
+        
+        # Из них платящих
+        cursor = await db.execute("""
+            SELECT COUNT(DISTINCT u.user_id)
+            FROM users u
+            JOIN payments p ON p.user_id = u.user_id
+            WHERE u.referrer_id = ? AND p.status = 'confirmed'
+        """, (user_id,))
+        paid = (await cursor.fetchone())[0]
+        
+        return {"total": total, "paid": paid}
+
 
 
 

@@ -65,6 +65,30 @@ bot = Bot(
 dp = Dispatcher()
 
 
+@dp.message(Command("refstat"))
+async def referral_stats(message: Message):
+    user_id = message.from_user.id
+    
+    if not await check_access(user_id):
+        await message.answer("❌ Доступ ограничен.")
+        return
+    
+    stats = await get_referral_stats(user_id)
+    
+    # Реферальная ссылка
+    bot_info = await bot.get_me()
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    
+    text = (
+        f"📊 <b>Статистика рефералов</b>\n\n"
+        f"👥 Перешло по ссылке: <b>{stats['total']}</b>\n"
+        f"💳 Купило подписку: <b>{stats['paid']}</b>\n\n"
+        f"🔗 Твоя ссылка:\n<code>{ref_link}</code>"
+    )
+    
+    await message.answer(text, parse_mode="HTML")
+
+
 # ==================== ГЛАВНОЕ МЕНЮ ====================
 
 async def send_main_menu(message_or_callback, full_name: str = None):
@@ -1070,30 +1094,6 @@ async def copy_referral(callback: CallbackQuery):
         "Скопируйте ссылку из сообщения выше.",
         show_alert=True
     )
-
-@dp.message(Command("refstat"))
-async def referral_stats(message: Message):
-    user_id = message.from_user.id
-    
-    if not await check_access(user_id):
-        await message.answer("❌ Доступ ограничен.")
-        return
-    
-    stats = await get_referral_stats(user_id)
-    
-    # Реферальная ссылка
-    bot_info = await bot.get_me()
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
-    
-    text = (
-        f"📊 <b>Статистика рефералов</b>\n\n"
-        f"👥 Перешло по ссылке: <b>{stats['total']}</b>\n"
-        f"💳 Купило подписку: <b>{stats['paid']}</b>\n\n"
-        f"🔗 Твоя ссылка:\n<code>{ref_link}</code>"
-    )
-    
-    await message.answer(text, parse_mode="HTML")
-
 
 
 # ==================== ПОДДЕРЖКА ====================

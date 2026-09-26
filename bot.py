@@ -29,6 +29,8 @@ from keyboards import *
 
 from admin import admin_router, EditThrowState, ADMINS
 from platega import create_platega_link
+import uvicorn
+import callback_server
 
 load_dotenv()
 
@@ -1523,18 +1525,35 @@ async def show_favorites_by_map(callback: CallbackQuery):
 
 # ==================== ЗАПУСК БОТА ====================
 
+async def run_callback_server():
+    """Запускает FastAPI-сервер для приёма callback от Platega"""
+    config = uvicorn.Config(
+        callback_server.app,
+        host="0.0.0.0",
+        port=8080,
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
 async def main():
     await init_db()
 
     # ========== НАСТРОЙКА ТРОТТЛИНГА ==========
     config = SentinelConfig(
-        throttling_default_max=5,          # максимум 5 запросов
-        throttling_default_per_seconds=10, # за 10 секунд
+        throttling_default_max=5,
+        throttling_default_per_seconds=10,
     )
     await Sentinel.setup(dp, config)
     # =========================================
 
-    dp.include_router(admin_router) 
+    # 🆕 ПЕРЕДАЁМ БОТА В CALLBACK-СЕРВЕР
+    callback_server.set_bot(bot)
+
+    # 🆕 ЗАПУСКАЕМ FASTAPI В ФОНЕ
+    asyncio.create_task(run_callback_server())
+
+    dp.include_router(admin_router)
     asyncio.create_task(expiry_notifications_worker())
 
     try:

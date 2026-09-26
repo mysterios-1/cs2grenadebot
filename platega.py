@@ -1,11 +1,17 @@
+import os
+
 import aiohttp
 import uuid
 import logging
 from typing import Optional
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # ========== НАСТРОЙКИ ==========
-PLATEGA_MERCHANT_ID = "4ed377e6-ffc2-4b14-8cc0-c0b2dbd94523"
-PLATEGA_SECRET = "eGGg0NcNf3HFGpGyRRWiPF5jw6GLb1t3vVxC6L6NzxhGmA8WITqs3BOnEyLoMbHA4V76nwJ2jxfdAfFNzyxCGAFOYF2n731wqbk5"
+PLATEGA_MERCHANT_ID = os.getenv("PLATEGA_MERCHANT_ID")
+PLATEGA_SECRET = os.getenv("PLATEGA_SECRET")
 PLATEGA_API_URL = "https://app.platega.io/v2/transaction/process"
 # ==============================
 

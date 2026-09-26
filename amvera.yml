@@ -10,4 +10,4 @@ build:
 run:
   scriptName: bot.py  # здесь должно быть название твоего основного файла
   persistenceMount: /data
-  containerPort: 80
+  containerPort: 8080

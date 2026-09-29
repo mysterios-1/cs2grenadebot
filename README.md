@@ -83,11 +83,6 @@ pip install -r requirements.txt
 4. Настройка .env
 Создай файл .env в корне проекта:
 
-env
-# Telegram Bot
-BOT_TOKEN=твой_токен_от_BotFather
-PROXY_URL=
-
 # Platega (платёжная система)
 PLATEGA_MERCHANT_ID=твой_merchant_id
 PLATEGA_SECRET=твой_secret_key

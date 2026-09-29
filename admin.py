@@ -516,8 +516,8 @@ async def add_days_command(message: Message):
     try:
         await message.bot.send_message(
             user_id,
-            f"🎁 <b>Вам добавлено {days} дней доступа!</b>\n\n"
-            f"🗓️ Подписка активна до: <b>{new_until.strftime('%d.%m.%Y %H:%M')}</b>"
+            f"<b>Вам добавлено {days} дней доступа!</b>\n\n"
+            f"Подписка активна до: <b>{new_until.strftime('%d.%m.%Y %H:%M')}</b>"
         )
     except Exception as e:
         print(f"Не удалось уведомить пользователя {user_id}: {e}")

@@ -37,209 +37,50 @@ GrenadeCS2 — это Telegram-бот, который помогает игро�
 
 🎨 Автоматический зум прицелов (/focus)
 
-🛠️ Технологии
-Технология	Назначение
-Python 3.13	Язык разработки
-aiogram 3.22	Telegram Bot Framework
-FastAPI + Uvicorn	Обработка вебхуков от Platega
-SQLite (aiosqlite)	База данных
-Pillow	Обработка изображений (зум прицелов)
-aiogram-sentinel	Анти-троттлинг
-Platega API	Приём платежей (СБП, карты)
-Telegram Stars	Альтернативная оплата
-📁 Структура проекта
-text
-grenadecs2-bot/
-├── bot.py                  # Точка входа, основные хендлеры
-├── admin.py                # Админ-панель (FSM для добавления раскидок)
-├── database.py             # Работа с SQLite (пользователи, раскидки, платежи)
-├── keyboards.py            # Все инлайн-клавиатуры
-├── callback_server.py      # FastAPI для вебхуков Platega
-├── platega.py              # Клиент Platega API
-├── emojis_config.py        # ID кастомных эмодзи
-├── emojis_utils.py         # Утилиты для эмодзи
-├── requirements.txt        # Зависимости
-├── amvera.yml              # Конфиг для деплоя на Amvera
-├── .env                    # Переменные окружения (не в Git!)
-└── data/
-    └── smoke_bot.db        # База данных (на сервере: /data/)
-🚀 Установка и запуск
-1. Клонирование репозитория
-bash
-git clone https://github.com/твой_username/grenadecs2-bot.git
-cd grenadecs2-bot
-2. Создание виртуального окружения
-bash
-python -m venv venv
+Технологии, которые используются в проекте: Python 3.13, aiogram 3.22 (Telegram Bot Framework), FastAPI и Uvicorn для обработки вебхуков от Platega, SQLite через aiosqlite для базы данных, Pillow для обработки изображений (зум прицелов), aiogram-sentinel для защиты от троттлинга, Platega API для приёма платежей (СБП и карты), а также Telegram Stars как альтернативный способ оплаты.
 
-# Windows
-venv\Scripts\activate
+Структура проекта: bot.py — точка входа и основные хендлеры, admin.py — админ-панель с FSM для добавления раскидок, database.py — работа с SQLite (пользователи, раскидки, платежи), keyboards.py — все инлайн-клавиатуры, callback_server.py — FastAPI для вебхуков Platega, platega.py — клиент Platega API, emojis_config.py — ID кастомных эмодзи, emojis_utils.py — утилиты для эмодзи, requirements.txt — зависимости, amvera.yml — конфиг для деплоя на Amvera, .env — переменные окружения (не попадает в Git), data/smoke_bot.db — база данных (на сервере хранится в /data/).
 
-# Linux/Mac
-source venv/bin/activate
-3. Установка зависимостей
-bash
-pip install -r requirements.txt
-4. Настройка .env
-Создай файл .env в корне проекта:
+Установка и запуск. Сначала клонируй репозиторий командой git clone https://github.com/твой_username/grenadecs2-bot.git и перейди в папку cd grenadecs2-bot. Затем создай виртуальное окружение командой python -m venv venv и активируй его: на Windows — venv\Scripts\activate, на Linux и Mac — source venv/bin/activate. После этого установи зависимости командой pip install -r requirements.txt.
 
-env
-# Telegram Bot
-BOT_TOKEN=твой_токен_от_BotFather
-PROXY_URL=
+Настройка .env. Создай файл .env в корне проекта и добавь туда три переменные: BOT_TOKEN со значением токена от BotFather, PLATEGA_MERCHANT_ID со значением твоего merchant ID из личного кабинета Platega, PLATEGA_SECRET со значением твоего секретного ключа оттуда же. Переменная PROXY_URL опциональна — она нужна, только если ты используешь прокси.
 
-# Platega (платёжная система)
-PLATEGA_MERCHANT_ID=твой_merchant_id
-PLATEGA_SECRET=твой_secret_key
-5. Запуск
-bash
-python bot.py
-Бот запустится и будет слушать:
+Запуск. Выполни команду python bot.py. Бот запустится и будет слушать Telegram API через aiogram, а также HTTP-сервер на порту 8080 через FastAPI для приёма вебхуков от Platega.
 
-Telegram API (aiogram)
+Деплой на Amvera. В файле amvera.yml должны быть указаны: environment python, toolchain pip версии 3.13, requirementsPath requirements.txt, scriptName bot.py, persistenceMount /data и containerPort 8080. В настройках Amvera добавь переменные окружения BOT_TOKEN, PLATEGA_MERCHANT_ID и PLATEGA_SECRET с этапом «Запуск». Залей код командой git push amvera master. Затем в настройках Amvera в разделе «Доменные имена» добавь бесплатный домен Амвера — получишь URL вида https://твой-проект.твой-ник.amvera.io. Этот URL вставь в личный кабинет Platega в поле Callback URL, добавив в конце /platega/callback.
 
-HTTP-сервер на порту 8080 (FastAPI для вебхуков Platega)
+Как работает оплата. Пользователь нажимает «Продлить доступ» в боте, бот создаёт ссылку через Platega API функцией create_platega_link, пользователь переходит по ссылке и оплачивает через СБП или карту, Platega отправляет POST-запрос на callback_server.py по адресу /platega/callback, сервер проверяет заголовки X-MerchantId и X-Secret, при статусе CONFIRMED начисляет дни через add_days, записывает платёж в БД для статистики и отправляет пользователю сообщение об успешной оплате.
 
-🌐 Деплой на Amvera
-1. Настройка amvera.yml
-yaml
-meta:
-  environment: python
-  toolchain:
-    name: pip
-    version: "3.13"
+Реферальная система. При переходе по ссылке вида /start ref_USER_ID новый пользователь получает +7 дней доступа, а реферер получает +7 дней и уведомление. Команда /refstat показывает, сколько всего людей перешло по ссылке и сколько из них купило подписку.
 
-build:
-  requirementsPath: requirements.txt
+Кастомные эмодзи. Бот использует Telegram Premium Emoji через тег tg-emoji с emoji-id. Все ID хранятся в emojis_config.py, а fallback (обычные эмодзи) — в emojis_utils.py. Использование: from emojis_utils import emoji, затем text = f"{emoji('smoke')} Смоки".
 
-run:
-  scriptName: bot.py
-  persistenceMount: /data
-  containerPort: 8080
-2. Переменные окружения
-В Amvera → Настройки → Переменные окружения добавь:
+База данных. Таблица users хранит пользователей, подписки и рефералов. Таблица throws хранит раскидки (карта, тип, фото, зона, сторона). Таблица payments хранит платежи для статистики. Таблица bot_photos хранит фото главного меню и респов. Таблица favorites хранит избранные раскидки пользователей. Путь к базе данных: на сервере — /data/smoke_bot.db, локально — ./data/smoke_bot.db.
 
-Ключ	Значение	Этап
-BOT_TOKEN	токен бота	Запуск
-PLATEGA_MERCHANT_ID	ID мерчанта	Запуск
-PLATEGA_SECRET	секретный ключ	Запуск
-3. Деплой
-bash
-git add .
-git commit -m "Deploy"
-git push amvera master
-4. Настройка домена для вебхуков
-Amvera → Настройки → Доменные имена → Добавить → Бесплатный домен Амвера.
+Команды администратора. /add — добавить новую раскидку. /adddays USER_ID DAYS — начислить дни вручную. /stats — статистика бота. /users — список пользователей. /checkdb — проверить базу данных. /listphotos — список сохранённых фото. /focus — зазумить все фото прицелов. /setmain — установить фото главного меню. /setresp_карта_сторона — установить фото респов.
 
-Получишь URL вида: https://твой-проект.твой-ник.amvera.io
+Безопасность. Все ключи хранятся в .env и не попадают в Git. Callback от Platega проверяется по заголовкам X-MerchantId и X-Secret. Анти-троттлинг работает через aiogram-sentinel. Проверка доступа через check_access() выполняется перед каждым действием. Защита от повторных кликов реализована через игнорирование ошибки message is not modified.
 
-5. Настройка Callback URL в Platega
-В личном кабинете Platega → Callback URL:
+Лицензия — MIT. Свободно используй, изменяй и распространяй.
 
-text
-https://твой-проект.твой-ник.amvera.io/platega/callback
-💳 Как работает оплата
-Пользователь нажимает «Продлить доступ» в боте
+Контакты. Telegram — @syntax322. Бот — @GrenadeCS2Help_bot.
 
-Бот создаёт ссылку через Platega API (create_platega_link)
-
-Пользователь переходит по ссылке и оплачивает (СБП или карта)
-
-Platega отправляет POST на callback_server.py → /platega/callback
-
-Сервер проверяет заголовки X-MerchantId и X-Secret
-
-При статусе CONFIRMED:
-
-Начисляет дни через add_days()
-
-Записывает платёж в БД (для /refstat)
-
-Отправляет пользователю сообщение об успехе
-
-👥 Реферальная система
-При /start ref_<user_id> новый пользователь получает +7 дней
-
-Реферер получает +7 дней и уведомление
-
-Команда /refstat показывает:
-
-Сколько всего перешло по ссылке
-
-Сколько из них купило подписку
-
-🎨 Кастомные эмодзи
-Бот использует Telegram Premium Emoji через <tg-emoji emoji-id="...">.
-
-Все ID хранятся в emojis_config.py, а fallback (обычные эмодзи) — в emojis_utils.py.
-
-Использование:
-
-python
-from emojis_utils import emoji
-text = f"{emoji('smoke')} <b>Смоки</b>"
-📊 База данных
-Таблицы
-Таблица	Назначение
-users	Пользователи, подписки, рефералы
-throws	Раскидки (карта, тип, фото, зона, сторона)
-payments	Платежи (для статистики)
-bot_photos	Фото главного меню и респов
-favorites	Избранные раскидки пользователей
-Путь к БД
-На сервере: /data/smoke_bot.db (постоянное хранилище)
-
-Локально: ./data/smoke_bot.db
-
-🧪 Локальное тестирование
-bash
-# Запуск бота локально
-python bot.py
-
-# Проверка callback-сервера
-curl http://localhost:8080/
-# Должно вернуть: {"status":"ok","service":"Platega callback"}
-📸 Команды администратора
-Команда	Описание
-/add	Добавить новую раскидку
-/adddays USER_ID DAYS	Начислить дни вручную
-/stats	Статистика бота
-/users	Список пользователей
-/checkdb	Проверить БД
-/listphotos	Список фото
-/focus	Зазумить все фото прицелов
-/setmain	Установить фото главного меню
-/setresp_карта_сторона	Установить фото респов
-🔒 Безопасность
-✅ Все ключи хранятся в .env (не в Git!)
-
-✅ Callback от Platega проверяется по X-MerchantId и X-Secret
-
-✅ Анти-троттлинг через aiogram-sentinel
-
-✅ Проверка доступа через check_access() перед каждым действием
-
-✅ Защита от повторных кликов (message is not modified)
-
-📝 Лицензия
-MIT License. Свободно используй, изменяй и распространяй.
-
-🤝 Контакты
-Telegram: @syntax322
+Roadmap. Уже сделано: база раскидок на 6 карт, круглый зум прицелов, избранное и комбо-связки, реферальная система со статистикой, оплата через Platega, оплата через Telegram Stars, callback-сервер для вебхуков. Планируется: пользовательские паки раскидок, видео-раскидки в формате GIF, расширение на другие игры (Valorant, Dota 2).
 
 Бот: @GrenadeCS2Help_bot
 
 GitHub Issues: создать issue
 
 🎯 Roadmap
-☑ База раскидок на 6 карт
-☑ Круглый зум прицелов
-☑ Избранное и комбо-связки
-☑ Реферальная система + статистика
-☑ Оплата через Platega (рубли)
-☑ Оплата через Telegram Stars
-☑ Callback-сервер для вебхуков
-□ Пользовательские паки раскидок
-□ Видео-раскидки (GIF)
-□ Расширение на другие игры (Valorant, Dota 2)
+База раскидок на 6 карт
+Круглый зум прицелов
+Избранное и комбо-связки
+Реферальная система + статистика
+Оплата через Platega (рубли)
+Оплата через Telegram Stars
+Callback-сервер для вебхуков
+Пользовательские паки раскидок
+Видео-раскидки (GIF)
+Расширение на другие игры (Valorant, Dota 2)
+
 Сделано с ❤️ для CS2-сообщества
